@@ -5,8 +5,6 @@ from uuid import uuid4, UUID
 
 import json
 
-app = FastAPI()
-
 html = """
 <!DOCTYPE html>
 <html>
@@ -43,12 +41,33 @@ html = """
 
 
 class User:
-    def __init__(self, ws: WebSocket = None, username: str = None, admin: bool = False):
+    def __init__(self, ws: WebSocket = None, username: str = None):
         self.ws = ws
         self.username = username
-        self.admin = admin
+        # self.admin = admin
         self.group_id = None
         self.image = None
+        self.id = uuid4()
+
+    def to_json(self) -> str:
+        return json.dumps({
+            'username': self.username,
+            'group_id': self.group_id,
+            'image': self.image,
+        })
+    
+    # TODO exceptions
+    def from_json(self, json_data: str, ws: WebSocket) -> None:
+        self.ws = ws
+        # try:
+        json_data = json.loads(json_data)
+        self.username = json_data['username']
+        self.group_id = json_data['group_id']
+        self.image = json_data['image']
+        # except json.decoder.JSONDecodeError:
+        #     pass
+        # except KeyError:
+        #     pass
 
 
 class Group:
@@ -56,7 +75,74 @@ class Group:
         self.name = name
         self.admin_id = admin_id  # admin user id
         self.image = None
-        self.participants = list()
+        self.members = list()
+        self.id = uuid4()
+
+    def to_json(self) -> str:
+        return json.dumps({
+            'username': self.name,
+            'admin_id': self.admin_id,
+            'image': self.image,
+            'members': self.members,
+        })
+    
+    # TODO exceptions
+    def from_json(self, json_data: str) -> None:
+        json_data = json.loads(json_data)
+        self.name = json_data['name']
+        self.admin_id = json_data['admin_id']
+        self.image = json_data['image']
+        self.members = json_data['members']
+
+
+class Message:
+    # TODO exceptions
+    def __init__(self, message: str):
+        self.from_json(message)
+
+    def __init__(self, type: str, data: str, request_id: UUID = uuid4()):
+        self.type = type
+        self.data = data
+        self.request_id = request_id
+
+    def get_type(self) -> str:
+        return self.type
+
+    def to_json(self) -> str:
+        return json.dumps({
+            'type': self.type,
+            'data': self.data,
+            'request_id': str(self.request_id),
+        })
+    
+    # TODO exceptions
+    def from_json(self, json_data: str) -> None:
+        json_data = json.loads(json_data)
+        self.type = json_data['type']
+        self.data = json_data['data']
+        self.request_id = UUID(json_data['request_id'])
+
+
+# TODO exceptions
+class db:
+    def __init__(self):
+        self.__users = dict()
+        self.__groups = dict()
+
+    def add_or_update_user(self, user: User) -> None:
+        user_id = user.id
+        self.__users[user_id] = user
+
+    def get_user(self, user_id: UUID) -> User:
+        return self.__users.get(user_id)
+    
+    def add_or_update_group(self, group: Group) -> None:
+        group_id = group.id
+        self.__groups[group_id] = group
+
+    def get_group(self, group_id: UUID) -> Group:
+        return self.__groups.get(group_id)
+
 
 
 class UserManager:
@@ -67,7 +153,7 @@ class UserManager:
     async def connect(self, ws: WebSocket) -> UUID:
         id = uuid4()
         self.__users[id] = User(ws)
-        await self.broadcast(f'connect|{id}')
+        # await self.broadcast(f'connect|{id}')
         return id
 
     async def restore(self, id: UUID, old_id: UUID, ws: WebSocket):
@@ -157,8 +243,9 @@ class UserManager:
     def get_ids(self) -> list:
         return self.__users.keys()
 
-
-manager = UserManager()
+if __name__ == '__main__':
+    app = FastAPI()
+    # manager = UserManager()
 
 
 @app.get("/")
@@ -168,52 +255,61 @@ async def get():
  
 @app.websocket("/ws")
 async def websocket_endpoint(ws: WebSocket):
-    # отдаём объекты или данные (ник / аватар / ... отдельно)?
-    # database?
     # размер картинок
-    # frontend получает сломанную картинку
     
     await ws.accept()
-    id = await manager.connect(ws)
+    # id = await manager.connect(ws)
+    user_id = uuid4()
     try:
         while True:
-            action, *payload = (await ws.receive_text()).split('|', 1)
-            await ws.send_text(f"Message text was: {action}")
+            try:
+                message = Message(await ws.receive_text())
+            except (json.decoder.JSONDecodeError, KeyError) as e:
+                await ws.send_text(
+                    Message(
+                        type='error',
+                        data=['invalid json'],
+                        request_id=uuid4()
+                    ).to_json()
+                )
+
+            # action, *payload = (await ws.receive_text()).split('|', 1)
+            # await ws.send_text(f"Message text was: {action}")
 
             match action:
-                case 'get_user_image':
-                    await manager.get_image(id)
-                case 'set_user_image':
-                    await manager.set_image(id, payload[0])
+                # case 'get_user_image':
+                #     await manager.get_image(id)
+                # case 'set_user_image':
+                #     await manager.set_image(id, payload[0])
 
-                case 'get_user_name':
-                    await manager.get_user_name(id)
-                case 'set_user_name':
-                    await manager.set_user_name(id, payload[0])
+                # case 'get_user_name':
+                #     await manager.get_user_name(id)
+                # case 'set_user_name':
+                #     await manager.set_user_name(id, payload[0])
 
-                case 'get_group_name': # id в запросе
-                    # await manager.set_user_name(id, payload[0])
-                case 'set_group_name': # id в запросе
-                    # await manager.set_user_name(id, payload[0])
+                # case 'get_group_name': # id в запросе
+                #     # await manager.set_user_name(id, payload[0])
+                # case 'set_group_name': # id в запросе
+                #     # await manager.set_user_name(id, payload[0])
 
-                case 'get_group_image': # id в запросе
-                    # await manager.set_image(id, payload[0])
-                case 'set_group_image': # id в запросе
-                    await manager.set_image(id, payload[0])
+                # case 'get_group_image': # id в запросе
+                #     # await manager.set_image(id, payload[0])
+                # case 'set_group_image': # id в запросе
+                #     await manager.set_image(id, payload[0])
 
-                case 'get_groups':
-                    # await manager.set_user_name(id, payload[0])
-                    # <- get_groups|group_id,group_id,group_id
+                # case 'get_groups':
+                #     # await manager.set_user_name(id, payload[0])
+                #     # <- get_groups|group_id,group_id,group_id
 
-                case 'get_group_members': # group id в запросе
-                    # await manager.set_user_name(id, payload[0])
-                    # <- get_group_members|user_id,user_id,user_id
+                # case 'get_group_members': # group id в запросе
+                #     # await manager.set_user_name(id, payload[0])
+                #     # <- get_group_members|user_id,user_id,user_id
 
-                case 'add_group_member': # group id в запросе
-                    # await manager.set_image(id, payload[0])
+                # case 'add_group_member': # group id в запросе
+                #     # await manager.set_image(id, payload[0])
 
-                case 'set_user_ready': # true / false в запросе
-                    # await manager.set_image(id, payload[0])
+                # case 'set_user_ready': # true / false в запросе
+                #     # await manager.set_image(id, payload[0])
 
                 
 
