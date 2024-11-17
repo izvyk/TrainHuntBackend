@@ -1,26 +1,26 @@
 from __future__ import annotations
+
+import os
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
-from uuid import uuid4, UUID
+from uuid import UUID as UUID_non_serializable
 import json
 from enum import Enum
 from dataclasses import dataclass, field, asdict
 from typing import Dict
+import json_fix as _ # for json.dumps() to work on custom classes with __json__ method
 import uvicorn # for debugging
 
 
-class UUIDEncoder(json.JSONEncoder):
-    '''
-        A custom encoder to deal with 'TypeError: Object of type UUID is not JSON serializable' error
-        https://stackoverflow.com/a/48159596
-    '''
-    def default(self, obj):
-        if isinstance(obj, UUID):
-            # if the obj is uuid, we simply return the value of uuid
-            return obj.hex
-        if isinstance(obj, MessageType):
-            return obj.value
-        return json.JSONEncoder.default(self, obj)
+class UUID(UUID_non_serializable):
+    def __json__(self):
+        return self.hex
+
+
+def uuid4():
+    """Generate a random UUID."""
+    return UUID(bytes=os.urandom(16), version=4)
 
 
 class MessageType(Enum):
@@ -45,16 +45,19 @@ class MessageType(Enum):
     CONNECT = 'connect'
     DISCONNECT = 'disconnect'
 
+    def __json__(self):
+        return self.value
+
 
 @dataclass
 class User:
     id: UUID
     name: str = field(compare=False)
     image: str = field(compare=False)
-    group_id: UUID = field(compare=False, default=None)
+    group_id: UUID | None = field(compare=False, default=None)
 
-    def to_json(self) -> str:
-        return json.dumps(asdict(self), cls=UUIDEncoder)
+    # def to_json(self) -> str:
+    #     return json.dumps(asdict(self), cls=UUIDEncoder)
     
     @classmethod
     def from_json(cls, json_str: str) -> User:
@@ -65,6 +68,9 @@ class User:
     def from_dict(cls, data: dict) -> User:
         return cls(**data)
 
+    def __json__(self):
+        return asdict(self)
+
 
 @dataclass
 class Group:
@@ -74,8 +80,8 @@ class Group:
     image: str = field(compare=False)
     members: set[UUID] = field(compare=False, init=False, default_factory=set)
 
-    def to_json(self) -> str:
-        return json.dumps(asdict(self), cls=UUIDEncoder)
+    # def to_json(self) -> str:
+    #     return json.dumps(asdict(self), cls=UUIDEncoder)
 
     def update_from_json(self, json_str: str):
         new_group = self.__class__.from_json(json_str)
@@ -87,15 +93,18 @@ class Group:
         data = json.loads(json_str)
         return cls(**data)
 
+    def __json__(self):
+        return asdict(self)
+
 
 @dataclass
 class Message:
     type: MessageType
-    data: str
+    data: str | dict
     request_id: UUID = field(default_factory=uuid4)
-
-    def to_json(self) -> str:
-        return json.dumps(asdict(self), cls=UUIDEncoder)
+    #
+    # def to_json(self) -> str:
+    #     return json.dumps(asdict(self), cls=UUIDEncoder)
 
     @classmethod
     def from_json(cls, json_str: str) -> Message:
@@ -104,6 +113,9 @@ class Message:
     @classmethod
     def from_dict(cls, data: dict) -> Message:
         return cls(**data)
+
+    def __json__(self):
+        return asdict(self)
 
 
 # TODO exceptions
@@ -188,7 +200,8 @@ class WebSocketManager:
 
     async def send_personal_message(self, user_id: UUID, message: Message):
         if user_id in self.__connections:
-            await self.__connections[user_id].send_text(message.to_json())
+            # await self.__connections[user_id].send_text(message.to_json())
+            await self.__connections[user_id].send_json(message)
 
     # TODO overload for group:Group
     async def broadcast_to_group(self, group_id: UUID, message: Message):
@@ -239,7 +252,7 @@ class MessageHandler:
                 return Message(
                     # TODO SUCCESS or USER
                     type=MessageType.SUCCESS,
-                    data=user.to_json(),
+                    data=user,
                     request_id=message.request_id
                 )
             return Message(
@@ -262,7 +275,9 @@ class MessageHandler:
             self.db.add_or_update_user(user=user)
             return Message(
                 type=MessageType.SUCCESS,
-                data='user info saved',
+                data={
+                    'user_id': user.id,
+                },
                 request_id=message.request_id
             )
         # TODO specify Exception
@@ -289,7 +304,7 @@ class MessageHandler:
                 )
             return Message(
                 type=MessageType.SUCCESS,
-                data=group.to_json(),
+                data=group,
                 request_id=message.request_id
             )
         # TODO specify Exception
