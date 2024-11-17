@@ -1,46 +1,11 @@
 from __future__ import annotations
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse
 from uuid import uuid4, UUID
 import json
 from enum import Enum
 from dataclasses import dataclass, field, asdict
 from typing import Dict
-
-
-html = '''
-<!DOCTYPE html>
-<html>
-    <head>
-        <title>Chat</title>
-    </head>
-    <body>
-        <h1>WebSocket Chat</h1>
-        <form action="" onsubmit="sendMessage(event)">
-            <input type="text" id="messageText" autocomplete="off"/>
-            <button>Send</button>
-        </form>
-        <ul id='messages'>
-        </ul>
-        <script>
-            var ws = new WebSocket("ws://localhost:8000/ws");
-            ws.onmessage = function(event) {
-                var messages = document.getElementById('messages')
-                var message = document.createElement('li')
-                var content = document.createTextNode(event.data)
-                message.appendChild(content)
-                messages.appendChild(message)
-            };
-            function sendMessage(event) {
-                var input = document.getElementById("messageText")
-                ws.send(input.name)
-                input.name = ''
-                event.preventDefault()
-            }
-        </script>
-    </body>
-</html>
-'''
 
 
 class UUIDEncoder(json.JSONEncoder):
@@ -446,7 +411,7 @@ message_handler = MessageHandler(ws_manager, DB)
 
 @app.get('/')
 async def get():
-    return HTMLResponse(html)
+    return FileResponse('index.html')
 
 
 @app.websocket('/ws')
