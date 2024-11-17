@@ -18,6 +18,8 @@ class UUIDEncoder(json.JSONEncoder):
         if isinstance(obj, UUID):
             # if the obj is uuid, we simply return the value of uuid
             return obj.hex
+        if isinstance(obj, MessageType):
+            return obj.value
         return json.JSONEncoder.default(self, obj)
 
 
@@ -171,7 +173,7 @@ class WebSocketManager:
                 await self.broadcast_to_group(
                     user.group_id,
                     Message(
-                        type=MessageType.DISCONNECT.value,
+                        type=MessageType.DISCONNECT,
                         data={
                             'user_id': user_id,
                         },
@@ -214,7 +216,7 @@ class MessageHandler:
                 return await handler(user_id, message)
             
             return Message(
-                type=MessageType.ERROR.value,
+                type=MessageType.ERROR,
                 data='unknown message type',
                 request_id=message.request_id
             )
@@ -222,7 +224,7 @@ class MessageHandler:
         # TODO specify Exception
         except Exception as e:
             return Message(
-                type=MessageType.ERROR.value,
+                type=MessageType.ERROR,
                 data=str(e),
                 request_id=message.request_id
             )
@@ -233,19 +235,19 @@ class MessageHandler:
             if user := self.db.get_user(requested_user_id):
                 return Message(
                     # TODO SUCCESS or USER
-                    type=MessageType.SUCCESS.value,
+                    type=MessageType.SUCCESS,
                     data=user.to_json(),
                     request_id=message.request_id
                 )
             return Message(
-                type=MessageType.ERROR.value,
+                type=MessageType.ERROR,
                 data='user not found',
                 request_id=message.request_id
             )
         # TODO specify Exception
         except Exception as e:
             return Message(
-                type=MessageType.ERROR.value,
+                type=MessageType.ERROR,
                 data=str(e),
                 request_id=message.request_id
             )
@@ -256,14 +258,14 @@ class MessageHandler:
             user = User.from_dict(message.data | {'id': user_id})
             self.db.add_or_update_user(user=user)
             return Message(
-                type=MessageType.SUCCESS.value,
+                type=MessageType.SUCCESS,
                 data='user info saved',
                 request_id=message.request_id
             )
         # TODO specify Exception
         except Exception as e:
             return Message(
-                type=MessageType.ERROR.value,
+                type=MessageType.ERROR,
                 data=f'failed to update user info: {str(e)}',
                 request_id=message.request_id
             )
@@ -272,25 +274,25 @@ class MessageHandler:
         try:
             if not (group_id := message.data.get('group_id')):
                 return Message(
-                    type=MessageType.ERROR.value,
+                    type=MessageType.ERROR,
                     data=f'no group_id is given',
                     request_id=message.request_id
                 )
             if not (group := self.db.get_group(group_id)):
                 return Message(
-                    type=MessageType.ERROR.value,
+                    type=MessageType.ERROR,
                     data=f'group_id is wrong',
                     request_id=message.request_id
                 )
             return Message(
-                type=MessageType.SUCCESS.value,
+                type=MessageType.SUCCESS,
                 data=group.to_json(),
                 request_id=message.request_id
             )
         # TODO specify Exception
         except Exception as e:
             return Message(
-                type=MessageType.ERROR.value,
+                type=MessageType.ERROR,
                 data=f'failed to get the group: {str(e)}',
                 request_id=message.request_id
             )
@@ -303,14 +305,14 @@ class MessageHandler:
 
                 if group.admin_id != user_id:
                     return Message(
-                        type=MessageType.ERROR.value,
+                        type=MessageType.ERROR,
                         data='user is already a group member',
                         request_id=message.request_id
                     )
                 # update group info
                 group.update_from_json(message.data)
                 return Message(
-                    type=MessageType.SUCCESS.value,
+                    type=MessageType.SUCCESS,
                     data='group updated',
                     request_id=message.request_id
                 )
@@ -323,14 +325,14 @@ class MessageHandler:
             self.db.add_or_update_user(user)
             
             return Message(
-                type=MessageType.SUCCESS.value,
+                type=MessageType.SUCCESS,
                 data='group created',
                 request_id=message.request_id
             )
         # TODO specify Exception
         except Exception as e:
             return Message(
-                type=MessageType.ERROR.value,
+                type=MessageType.ERROR,
                 data=f'failed to create group: {str(e)}',
                 request_id=message.request_id
             )
@@ -339,7 +341,7 @@ class MessageHandler:
         try:
             if not (group_id := message.data.get('group_id')):
                 return Message(
-                    type=MessageType.ERROR.value,
+                    type=MessageType.ERROR,
                     data=f'no group_id is given',
                     request_id=message.request_id
                 )
@@ -355,14 +357,14 @@ class MessageHandler:
             )
 
             return Message(
-                type=MessageType.SUCCESS.value,
+                type=MessageType.SUCCESS,
                 data='joined the group',
                 request_id=message.request_id
             )
         # TODO specify Exception
         except Exception as e:
             return Message(
-                type=MessageType.ERROR.value,
+                type=MessageType.ERROR,
                 data=f'failed to join a group: {str(e)}',
                 request_id=message.request_id
             )
@@ -378,7 +380,7 @@ class MessageHandler:
                 self.ws_manager.send_personal_message(
                     member_id,
                     Message(
-                        type=MessageType.LEAVE_GROUP.value,
+                        type=MessageType.LEAVE_GROUP,
                         data=f'group is deleted',
                         request_id=uuid4()
                     )
@@ -386,7 +388,7 @@ class MessageHandler:
             self.db.delete_group(group_id)
             self.db.leave_group(user_id)
             return Message(
-                type=MessageType.SUCCESS.value,
+                type=MessageType.SUCCESS,
                 data=f'group is deleted',
                 request_id=message.request_id
             )
@@ -395,13 +397,13 @@ class MessageHandler:
         self.ws_manager.broadcast_to_group(
             group_id,
             Message(
-                type=MessageType.LEAVE_GROUP.value,
+                type=MessageType.LEAVE_GROUP,
                 data={'user_id': user_id},
                 request_id=uuid4()
             )
         )
         return Message(
-            type=MessageType.SUCCESS.value,
+            type=MessageType.SUCCESS,
             data=f'leaved the group',
             request_id=message.request_id
         )
@@ -435,7 +437,7 @@ async def websocket_endpoint(ws: WebSocket):
                 await ws_manager.send_personal_message(
                     user_id,
                     Message(
-                        type=MessageType.ERROR.value,
+                        type=MessageType.ERROR,
                         data='invalid json format',
                         request_id=uuid4()
                     )
