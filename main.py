@@ -8,7 +8,7 @@ from uuid import UUID as UUID_non_serializable
 import json
 from enum import Enum
 from dataclasses import dataclass, field, asdict
-from typing import Dict
+from typing import Dict, Any
 import json_fix as _ # for json.dumps() to work on custom classes with __json__ method
 import uvicorn # for debugging
 
@@ -83,14 +83,17 @@ class Group:
     # def to_json(self) -> str:
     #     return json.dumps(asdict(self), cls=UUIDEncoder)
 
-    def update_from_json(self, json_str: str):
-        new_group = self.__class__.from_json(json_str)
+    def update_from_dict(self, data: dict):
+        new_group = self.__class__.from_dict(data)
         self.name = new_group.name
         self.image = new_group.image
 
     @classmethod
     def from_json(cls, json_str: str) -> Group:
-        data = json.loads(json_str)
+        return cls.from_dict(json.loads(json_str))
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Group:
         return cls(**data)
 
     def __json__(self):
@@ -100,7 +103,7 @@ class Group:
 @dataclass
 class Message:
     type: MessageType
-    data: str | dict
+    data: Any
     request_id: UUID = field(default_factory=uuid4)
     #
     # def to_json(self) -> str:
@@ -247,10 +250,14 @@ class MessageHandler:
 
     async def handle_get_user_info(self, user_id: UUID, message: Message) -> Message:
         try:
-            requested_user_id = json.loads(message.data)['user_id']
+            if not (requested_user_id := UUID(message.data.get('user_id'))):
+                return Message(
+                    type=MessageType.ERROR,
+                    data='user_id is missing',
+                    request_id=message.request_id
+                )
             if user := self.db.get_user(requested_user_id):
                 return Message(
-                    # TODO SUCCESS or USER
                     type=MessageType.SUCCESS,
                     data=user,
                     request_id=message.request_id
@@ -290,7 +297,7 @@ class MessageHandler:
 
     async def handle_get_group_info(self, user_id: UUID, message: Message) -> Message:
         try:
-            if not (group_id := message.data.get('group_id')):
+            if not (group_id := UUID(message.data.get('group_id'))):
                 return Message(
                     type=MessageType.ERROR,
                     data=f'no group_id is given',
@@ -328,15 +335,14 @@ class MessageHandler:
                         request_id=message.request_id
                     )
                 # update group info
-                group.update_from_json(message.data)
+                group.update_from_dict(message.data)
                 return Message(
                     type=MessageType.SUCCESS,
                     data='group updated',
                     request_id=message.request_id
                 )
             
-            group = Group.from_json(message.data)
-            group.admin_id = user_id
+            group = Group.from_dict(message.data | {'admin_id': user_id})
             
             self.db.add_or_update_group(group)
             user.group_id = group.id
@@ -344,7 +350,9 @@ class MessageHandler:
             
             return Message(
                 type=MessageType.SUCCESS,
-                data='group created',
+                data={
+                    'group_id': group.id,
+                },
                 request_id=message.request_id
             )
         # TODO specify Exception
@@ -357,15 +365,15 @@ class MessageHandler:
 
     async def handle_join_group(self, user_id: UUID, message: Message) -> Message:
         try:
-            if not (group_id := message.data.get('group_id')):
+            if not (group_id := UUID(message.data.get('group_id'))):
                 return Message(
                     type=MessageType.ERROR,
-                    data=f'no group_id is given',
+                    data='group_id is missing',
                     request_id=message.request_id
                 )
             self.db.join_group(group_id, user_id)
 
-            self.ws_manager.broadcast_to_group(
+            await self.ws_manager.broadcast_to_group(
                 group_id,
                 Message(
                     type=message.type,
@@ -395,7 +403,7 @@ class MessageHandler:
         if group.admin_id == user_id:
             for member_id in group.members:
                 self.db.leave_group(member_id)
-                self.ws_manager.send_personal_message(
+                await self.ws_manager.send_personal_message(
                     member_id,
                     Message(
                         type=MessageType.LEAVE_GROUP,
@@ -412,7 +420,7 @@ class MessageHandler:
             )
 
         self.db.leave_group(user_id)
-        self.ws_manager.broadcast_to_group(
+        await self.ws_manager.broadcast_to_group(
             group_id,
             Message(
                 type=MessageType.LEAVE_GROUP,
@@ -425,6 +433,7 @@ class MessageHandler:
             data=f'leaved the group',
             request_id=message.request_id
         )
+
 
 # if __name__ == '__main__':
 app = FastAPI()
