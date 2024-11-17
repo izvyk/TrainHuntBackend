@@ -1,11 +1,14 @@
+from __future__ import annotations
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-
 from uuid import uuid4, UUID
-
 import json
+from enum import Enum
+from dataclasses import dataclass, field, asdict
+from typing import Dict
 
-html = """
+
+html = '''
 <!DOCTYPE html>
 <html>
     <head>
@@ -30,97 +33,90 @@ html = """
             };
             function sendMessage(event) {
                 var input = document.getElementById("messageText")
-                ws.send(input.value)
-                input.value = ''
+                ws.send(input.name)
+                input.name = ''
                 event.preventDefault()
             }
         </script>
     </body>
 </html>
-"""
+'''
 
 
+class MessageType(Enum):
+    # User related
+    GET_USER_INFO = 'get_user_info'
+    SET_USER_INFO = 'set_user_info'
+    
+    # Group related
+    # CREATE_GROUP = 'create_group' # = set_group_info
+    # DELETE_GROUP = 'delete_group' # = admin leaves the group
+    JOIN_GROUP = 'join_group'
+    LEAVE_GROUP = 'leave_group'
+    GET_GROUP_INFO = 'get_group_info'
+    SET_GROUP_INFO = 'set_group_info'
+    # GET_GROUP_MEMBERS = 'get_group_members' # ?
+    
+    # System messages
+    ERROR = 'error'
+    SUCCESS = 'success'
+
+    # Connection
+    CONNECT = 'connect'
+    DISCONNECT = 'disconnect'
+
+
+@dataclass
 class User:
-    def __init__(self, ws: WebSocket = None, username: str = None):
-        self.ws = ws
-        self.username = username
-        # self.admin = admin
-        self.group_id = None
-        self.image = None
-        self.id = uuid4()
+    id: UUID
+    username: str = field(compare=False)
+    group_id: UUID = field(compare=False)
+    image: str = field(compare=False)
 
     def to_json(self) -> str:
-        return json.dumps({
-            'username': self.username,
-            'group_id': self.group_id,
-            'image': self.image,
-        })
+        return json.dumps(asdict(self))
     
-    # TODO exceptions
-    def from_json(self, json_data: str, ws: WebSocket) -> None:
-        self.ws = ws
-        # try:
-        json_data = json.loads(json_data)
-        self.username = json_data['username']
-        self.group_id = json_data['group_id']
-        self.image = json_data['image']
-        # except json.decoder.JSONDecodeError:
-        #     pass
-        # except KeyError:
-        #     pass
+    @classmethod
+    def from_json(cls, json_str: str) -> User:
+        data = json.loads(json_str)
+        return cls(**data)
 
 
+@dataclass
 class Group:
-    def __init__(self, admin_id: UUID, name: str = None):
-        self.name = name
-        self.admin_id = admin_id  # admin user id
-        self.image = None
-        self.members = list()
-        self.id = uuid4()
+    id: UUID = field(init=False, default_factory=uuid4)
+    admin_id: UUID = field(compare=False)
+    name: str = field(compare=False)
+    image: str = field(compare=False)
+    members: set[UUID] = field(compare=False, init=False, default_factory=set)
 
     def to_json(self) -> str:
-        return json.dumps({
-            'username': self.name,
-            'admin_id': self.admin_id,
-            'image': self.image,
-            'members': self.members,
-        })
-    
-    # TODO exceptions
-    def from_json(self, json_data: str) -> None:
-        json_data = json.loads(json_data)
-        self.name = json_data['name']
-        self.admin_id = json_data['admin_id']
-        self.image = json_data['image']
-        self.members = json_data['members']
+        return json.dumps(asdict(self))
+
+    def update_from_json(self, json_str: str):
+        new_group = self.__class__.from_json(json_str)
+        self.name = new_group.name
+        self.image = new_group.image
+
+    @classmethod
+    def from_json(cls, json_str: str) -> Group:
+        data = json.loads(json_str)
+        return cls(**data)
 
 
+@dataclass
 class Message:
-    # TODO exceptions
-    def __init__(self, message: str):
-        self.from_json(message)
-
-    def __init__(self, type: str, data: str, request_id: UUID = uuid4()):
-        self.type = type
-        self.data = data
-        self.request_id = request_id
-
-    def get_type(self) -> str:
-        return self.type
+    type: MessageType
+    data: str
+    request_id: UUID = field(default_factory=uuid4)
 
     def to_json(self) -> str:
-        return json.dumps({
-            'type': self.type,
-            'data': self.data,
-            'request_id': str(self.request_id),
-        })
-    
-    # TODO exceptions
-    def from_json(self, json_data: str) -> None:
-        json_data = json.loads(json_data)
-        self.type = json_data['type']
-        self.data = json_data['data']
-        self.request_id = UUID(json_data['request_id'])
+        return json.dumps(asdict(self))
+
+    @classmethod
+    def from_json(cls, json_str: str) -> Message:
+        data = json.loads(json_str)
+        return cls(**data)
 
 
 # TODO exceptions
@@ -129,204 +125,338 @@ class db:
         self.__users = dict()
         self.__groups = dict()
 
-    def add_or_update_user(self, user: User) -> None:
-        user_id = user.id
-        self.__users[user_id] = user
+    def add_or_update_user(self, user: User):
+        self.__users[user.id] = user
 
     def get_user(self, user_id: UUID) -> User:
         return self.__users.get(user_id)
     
-    def add_or_update_group(self, group: Group) -> None:
-        group_id = group.id
-        self.__groups[group_id] = group
+    def add_or_update_group(self, group: Group):
+        self.__groups[group.id] = group
 
     def get_group(self, group_id: UUID) -> Group:
         return self.__groups.get(group_id)
 
+    def join_group(self, group_id: UUID, user_id: UUID):
+        user = self.__users.get(user_id)
+        group = self.__groups.get(group_id)
+
+        if not user or not group:
+            raise ValueError('wrong id')
+
+        # check if user is an admin
+        if current_group_id := user.group_id:
+            if current_group := self.__groups.get(current_group_id):
+                if current_group.admin_id == user_id:
+                    raise ValueError('admin cannot join a group')
+                # else: # change group
+            # else: # member of non-existent group
+        # else: # not a group member
+        group.members.add(user_id)
+
+    def leave_group(self, user_id: UUID):
+        if user := self.__users.get(user_id):
+            if group := self.__groups.get(user.group_id):
+                group.members.remove(user_id)
+
+            user.group_id = None
+    
+    def delete_group(self, group_id):
+        if group := self.__groups.get(group_id):
+            if len(group.members) != 0:
+                # TODO specify the exception type
+                raise Exception('group is not empty')
+            del self.__groups[group_id]
+            
 
 
-class UserManager:
+class WebSocketManager:
     def __init__(self):
-        self.__users = dict()
-        self.__groups = dict()
+        self.__connections: Dict[UUID, WebSocket] = dict()
 
     async def connect(self, ws: WebSocket) -> UUID:
-        id = uuid4()
-        self.__users[id] = User(ws)
-        # await self.broadcast(f'connect|{id}')
-        return id
+        await ws.accept()
+        user_id = uuid4()
+        self.__connections[user_id] = ws
+        return user_id
 
-    async def restore(self, id: UUID, old_id: UUID, ws: WebSocket):
-        self.__users[old_id].ws = ws
-        del self.__users[id]
-        await self.broadcast(f'{id} is replaced with {old_id}')
-        await self.broadcast(f'{old_id} is back online')
-        # await notify_group(f'{old_id} is back online')
+    async def disconnect(self, user_id: UUID):
+        if user_id in self.__connections:
+            del self.__connections[user_id]
+            user = db.get_user(user_id)
+            # TODO user deletion?
+            if user and user.group_id:
+                await self.broadcast_to_group(
+                    user.group_id,
+                    Message(
+                        type=MessageType.DISCONNECT.value,
+                        data={
+                            'user_id': user_id,
+                        },
+                        request_id=uuid4()
+                    )
+                )
 
-    @staticmethod
-    async def send(ws: WebSocket, message: str):
-        if not ws:
-            return
-        await ws.send_text(message)
+    # TODO reconnect
 
+    async def send_personal_message(self, user_id: UUID, message: Message):
+        if user_id in self.__connections:
+            await self.__connections[user_id].send_text(message.to_json())
 
-    async def set_user_name(self, id: UUID, new_username: str):
-        self.__users[id].username = new_username
-        await self.send('set_user_name|ok')
-
-    async def get_user_name(self, id: UUID):
-        await self.send(f'get_user_name|{self.__users[id].username}')
-
-
-    async def set_user_image(self, id: UUID, image: str):
-        self.__users[id].image = image
-        await self.send('set_user_image|ok')
-
-    async def get_user_image(self, id: UUID):
-        await self.send(f'get_user_image|{self.__users[id].image}')
-
-    
-    async def create_group(self, user_id: UUID):
-        user = self.__users[id]
-        if user.group_id is not None:
-            old_group = self.__groups[user.group_id]
-            if old_group.admin_id == user_id:
-                await self.send(f'create_group|error|this user already is an admin in another group')
-                return
-            await self.send(f'create_group|error|this user is already a member of another group')
-            return
-        new_group_id = uuid4()
-        self.__groups[new_group_id] = Group(admin_id=user_id)
-        self.__users[user_id].group_id = new_group_id
-        await self.send(f'create_group|{new_group_id}')
-
-    # async def get_group(self, user_id)
+    # TODO overload for group:Group
+    async def broadcast_to_group(self, group_id: UUID, message: Message):
+        if group := db.get_group(group_id):
+            for member_id in group.members:
+                await self.send_personal_message(member_id, message)
 
 
+class MessageHandler:
+    def __init__(self, ws_manager: WebSocketManager, db_instance: db):
+        self.ws_manager = ws_manager
+        self.db = db_instance
 
-    def set_admin(self, id: UUID, admin: UUID):
-        self.__users[id].admin = admin
+    async def handle_message(self, user_id: UUID, message: Message) -> Message:
+        try:
+            message_type = MessageType(message.type)
+            
+            handlers = {
+                MessageType.GET_USER_INFO: self.handle_get_user_info,
+                MessageType.SET_USER_INFO: self.handle_set_user_info,
+                MessageType.GET_GROUP_INFO: self.handle_get_group_info,
+                MessageType.SET_GROUP_INFO: self.handle_set_group_info,
+                MessageType.JOIN_GROUP: self.handle_join_group,
+                MessageType.LEAVE_GROUP: self.handle_leave_group,
+            }
+            
+            if handler := handlers.get(message_type):
+                return await handler(user_id, message)
+            
+            return Message(
+                type=MessageType.ERROR.value,
+                data='unknown message type',
+                request_id=message.request_id
+            )
+        
+        # TODO specify Exception
+        except Exception as e:
+            return Message(
+                type=MessageType.ERROR.value,
+                data=str(e),
+                request_id=message.request_id
+            )
 
-    def set_ws(self, id: UUID, ws: WebSocket):
-        self.__users[id].ws = ws
+    async def handle_get_user_info(self, user_id: UUID, message: Message) -> Message:
+        try:
+            requested_user_id = json.loads(message.data)['user_id']
+            if user := self.db.get_user(requested_user_id):
+                return Message(
+                    # TODO SUCCESS or USER
+                    type=MessageType.SUCCESS.value,
+                    data=user.to_json(),
+                    request_id=message.request_id
+                )
+            return Message(
+                type=MessageType.ERROR.value,
+                data='user not found',
+                request_id=message.request_id
+            )
+        # TODO specify Exception
+        except Exception as e:
+            return Message(
+                type=MessageType.ERROR.value,
+                data=str(e),
+                request_id=message.request_id
+            )
 
-    async def notify_admin(self, id: UUID, message: str):
-        await self.send(self.__users[self.__users[id].admin].ws, message)
+    async def handle_set_user_info(self, user_id: UUID, message: Message) -> Message:
+        # TODO notify group members?
+        try:
+            user = User.from_json(message.data)
+            user.id = user_id
+            self.db.add_or_update_user(user)
+            return Message(
+                type=MessageType.SUCCESS.value,
+                data='user info saved',
+                request_id=message.request_id
+            )
+        # TODO specify Exception
+        except Exception as e:
+            return Message(
+                type=MessageType.ERROR.value,
+                data=f'failed to update user info: {str(e)}',
+                request_id=message.request_id
+            )
 
-    # async def notify_team(self, id: UUID, message: str):
-    #     user = self.__users.get(id)
-    #     if not user:
-    #         return 1
-    #
-    #     for player in self.__users.values():
-    #         if player.admin == user.admin:
-    #             await self.send(user.ws, message)
+    async def handle_get_group_info(self, user_id: UUID, message: Message) -> Message:
+        try:
+            if not (group_id := message.data.get('group_id')):
+                return Message(
+                    type=MessageType.ERROR.value,
+                    data=f'no group_id is given',
+                    request_id=message.request_id
+                )
+            if not (group := self.db.get_group(group_id)):
+                return Message(
+                    type=MessageType.ERROR.value,
+                    data=f'group_id is wrong',
+                    request_id=message.request_id
+                )
+            return Message(
+                type=MessageType.SUCCESS.value,
+                data=group.to_json(),
+                request_id=message.request_id
+            )
+        # TODO specify Exception
+        except Exception as e:
+            return Message(
+                type=MessageType.ERROR.value,
+                data=f'failed to get the group: {str(e)}',
+                request_id=message.request_id
+            )
 
-    async def notify_group(self, id: UUID, message: str):
-        user = self.__users.get(id)
-        if not user:
-            return 1
+    async def handle_set_group_info(self, user_id: UUID, message: Message) -> Message:
+        try:
+            user = self.db.get_user(user_id)
+            if user.group_id:
+                group = self.db.get_group(user.group_id)
 
-        for player in self.__users.values():
-            if player.admin == user.admin:
-                await self.send(user.ws, message)
+                if group.admin_id != user_id:
+                    return Message(
+                        type=MessageType.ERROR.value,
+                        data='user is already a group member',
+                        request_id=message.request_id
+                    )
+                # update group info
+                group.update_from_json(message.data)
+                return Message(
+                    type=MessageType.SUCCESS.value,
+                    data='group updated',
+                    request_id=message.request_id
+                )
+            
+            group = Group.from_json(message.data)
+            group.admin_id = user_id
+            
+            self.db.add_or_update_group(group)
+            user.group_id = group.id
+            self.db.add_or_update_user(user)
+            
+            return Message(
+                type=MessageType.SUCCESS.value,
+                data='group created',
+                request_id=message.request_id
+            )
+        # TODO specify Exception
+        except Exception as e:
+            return Message(
+                type=MessageType.ERROR.value,
+                data=f'failed to create group: {str(e)}',
+                request_id=message.request_id
+            )
 
-    async def broadcast(self, message: str):
-        for user in self.__users.values():
-            await self.send(user.ws, message)
+    async def handle_join_group(self, user_id: UUID, message: Message) -> Message:
+        try:
+            if not (group_id := message.data.get('group_id')):
+                return Message(
+                    type=MessageType.ERROR.value,
+                    data=f'no group_id is given',
+                    request_id=message.request_id
+                )
+            self.db.join_group(group_id, user_id)
 
-    async def disconnect(self, id: UUID):
-        self.__users[id].ws = None
-        # self.notify_group(uuid, f'disconnect|{uuid}')
-        await self.broadcast(f'disconnect|{id}')
+            self.ws_manager.broadcast_to_group(
+                group_id,
+                Message(
+                    type=message.type,
+                    data={'user_id': user_id},
+                    request_id=uuid4()
+                )
+            )
 
-    def get_ids(self) -> list:
-        return self.__users.keys()
+            return Message(
+                type=MessageType.SUCCESS.value,
+                data='joined the group',
+                request_id=message.request_id
+            )
+        # TODO specify Exception
+        except Exception as e:
+            return Message(
+                type=MessageType.ERROR.value,
+                data=f'failed to join a group: {str(e)}',
+                request_id=message.request_id
+            )
 
-if __name__ == '__main__':
-    app = FastAPI()
-    # manager = UserManager()
+    async def handle_leave_group(self, user_id: UUID, message: Message) -> Message:
+        user = self.db.get_user(user_id)
+        group_id = user.group_id
+        group = self.db.get_group(group_id)
+
+        if group.admin_id == user_id:
+            for member_id in group.members:
+                self.db.leave_group(member_id)
+                self.ws_manager.send_personal_message(
+                    member_id,
+                    Message(
+                        type=MessageType.LEAVE_GROUP.value,
+                        data=f'group is deleted',
+                        request_id=uuid4()
+                    )
+                )
+            self.db.delete_group(group_id)
+            self.db.leave_group(user_id)
+            return Message(
+                type=MessageType.SUCCESS.value,
+                data=f'group is deleted',
+                request_id=message.request_id
+            )
+
+        self.db.leave_group(user_id)
+        self.ws_manager.broadcast_to_group(
+            group_id,
+            Message(
+                type=MessageType.LEAVE_GROUP.value,
+                data={'user_id': user_id},
+                request_id=uuid4()
+            )
+        )
+        return Message(
+            type=MessageType.SUCCESS.value,
+            data=f'leaved the group',
+            request_id=message.request_id
+        )
+
+# if __name__ == '__main__':
+app = FastAPI()
+ws_manager = WebSocketManager()
+message_handler = MessageHandler()
 
 
-@app.get("/")
+@app.get('/')
 async def get():
     return HTMLResponse(html)
 
- 
-@app.websocket("/ws")
+
+@app.websocket('/ws')
 async def websocket_endpoint(ws: WebSocket):
-    # размер картинок
-    
-    await ws.accept()
-    # id = await manager.connect(ws)
-    user_id = uuid4()
+    user_id = await ws_manager.connect(ws)
     try:
         while True:
             try:
                 message = Message(await ws.receive_text())
-            except (json.decoder.JSONDecodeError, KeyError) as e:
-                await ws.send_text(
-                    Message(
-                        type='error',
-                        data=['invalid json'],
-                        request_id=uuid4()
-                    ).to_json()
-                )
-
-            # action, *payload = (await ws.receive_text()).split('|', 1)
-            # await ws.send_text(f"Message text was: {action}")
-
-            match action:
-                # case 'get_user_image':
-                #     await manager.get_image(id)
-                # case 'set_user_image':
-                #     await manager.set_image(id, payload[0])
-
-                # case 'get_user_name':
-                #     await manager.get_user_name(id)
-                # case 'set_user_name':
-                #     await manager.set_user_name(id, payload[0])
-
-                # case 'get_group_name': # id в запросе
-                #     # await manager.set_user_name(id, payload[0])
-                # case 'set_group_name': # id в запросе
-                #     # await manager.set_user_name(id, payload[0])
-
-                # case 'get_group_image': # id в запросе
-                #     # await manager.set_image(id, payload[0])
-                # case 'set_group_image': # id в запросе
-                #     await manager.set_image(id, payload[0])
-
-                # case 'get_groups':
-                #     # await manager.set_user_name(id, payload[0])
-                #     # <- get_groups|group_id,group_id,group_id
-
-                # case 'get_group_members': # group id в запросе
-                #     # await manager.set_user_name(id, payload[0])
-                #     # <- get_group_members|user_id,user_id,user_id
-
-                # case 'add_group_member': # group id в запросе
-                #     # await manager.set_image(id, payload[0])
-
-                # case 'set_user_ready': # true / false в запросе
-                #     # await manager.set_image(id, payload[0])
-
                 
-
-
-
-
-                case 'restore_user_id':
-                    await manager.restore(id, UUID(payload[0]), ws)
-
-
-                case 'broadcast':
-                    await manager.broadcast('|'.join(payload))
-                case 'clients':
-                    await ws.send_text(f'clients are {manager.get_ids()}')
-
-                case _:
-                    await ws.send_text('Unknown request')
+                response = await message_handler.handle_message(user_id, message)
+                
+                # Respond
+                await ws_manager.send_personal_message(user_id, response)
+                
+            except json.JSONDecodeError:
+                await ws_manager.send_personal_message(
+                    user_id,
+                    Message(
+                        type=MessageType.ERROR.value,
+                        data='invalid json format',
+                        request_id=uuid4()
+                    )
+                )
     except WebSocketDisconnect:
-        await manager.disconnect(id)
-
+        await ws_manager.disconnect(user_id)
