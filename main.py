@@ -99,7 +99,10 @@ class Message:
 
     @classmethod
     def from_json(cls, json_str: str) -> Message:
-        data = json.loads(json_str)
+        return cls(**json.loads(json_str))
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Message:
         return cls(**data)
 
 
@@ -426,7 +429,7 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         while True:
             try:
-                message = Message.from_json(await ws.receive_text())
+                message = Message.from_dict(await ws.receive_json())
                 
                 response = await message_handler.handle_message(user_id, message)
                 
