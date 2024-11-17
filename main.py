@@ -43,6 +43,18 @@ html = '''
 '''
 
 
+class UUIDEncoder(json.JSONEncoder):
+    '''
+        A custom encoder to deal with 'TypeError: Object of type UUID is not JSON serializable' error
+        https://stackoverflow.com/a/48159596
+    '''
+    def default(self, obj):
+        if isinstance(obj, UUID):
+            # if the obj is uuid, we simply return the value of uuid
+            return obj.hex
+        return json.JSONEncoder.default(self, obj)
+
+
 class MessageType(Enum):
     # User related
     GET_USER_INFO = 'get_user_info'
@@ -74,7 +86,7 @@ class User:
     image: str = field(compare=False)
 
     def to_json(self) -> str:
-        return json.dumps(asdict(self))
+        return json.dumps(asdict(self), cls=UUIDEncoder)
     
     @classmethod
     def from_json(cls, json_str: str) -> User:
@@ -91,7 +103,7 @@ class Group:
     members: set[UUID] = field(compare=False, init=False, default_factory=set)
 
     def to_json(self) -> str:
-        return json.dumps(asdict(self))
+        return json.dumps(asdict(self), cls=UUIDEncoder)
 
     def update_from_json(self, json_str: str):
         new_group = self.__class__.from_json(json_str)
@@ -111,7 +123,7 @@ class Message:
     request_id: UUID = field(default_factory=uuid4)
 
     def to_json(self) -> str:
-        return json.dumps(asdict(self))
+        return json.dumps(asdict(self), cls=UUIDEncoder)
 
     @classmethod
     def from_json(cls, json_str: str) -> Message:
@@ -450,7 +462,7 @@ async def websocket_endpoint(ws: WebSocket):
                 # Respond
                 await ws_manager.send_personal_message(user_id, response)
                 
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, TypeError):
                 await ws_manager.send_personal_message(
                     user_id,
                     Message(
