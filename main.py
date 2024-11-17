@@ -120,7 +120,7 @@ class Message:
 
 
 # TODO exceptions
-class db:
+class DB:
     def __init__(self):
         self.__users = dict()
         self.__groups = dict()
@@ -169,10 +169,10 @@ class db:
             del self.__groups[group_id]
             
 
-
 class WebSocketManager:
-    def __init__(self):
+    def __init__(self, db: DB):
         self.__connections: Dict[UUID, WebSocket] = dict()
+        self.db = db
 
     async def connect(self, ws: WebSocket) -> UUID:
         await ws.accept()
@@ -183,7 +183,7 @@ class WebSocketManager:
     async def disconnect(self, user_id: UUID):
         if user_id in self.__connections:
             del self.__connections[user_id]
-            user = db.get_user(user_id)
+            user = self.db.get_user(user_id)
             # TODO user deletion?
             if user and user.group_id:
                 await self.broadcast_to_group(
@@ -205,15 +205,15 @@ class WebSocketManager:
 
     # TODO overload for group:Group
     async def broadcast_to_group(self, group_id: UUID, message: Message):
-        if group := db.get_group(group_id):
+        if group := self.db.get_group(group_id):
             for member_id in group.members:
                 await self.send_personal_message(member_id, message)
 
 
 class MessageHandler:
-    def __init__(self, ws_manager: WebSocketManager, db_instance: db):
+    def __init__(self, ws_manager: WebSocketManager, db: DB):
         self.ws_manager = ws_manager
-        self.db = db_instance
+        self.db = db
 
     async def handle_message(self, user_id: UUID, message: Message) -> Message:
         try:
@@ -427,8 +427,9 @@ class MessageHandler:
 
 # if __name__ == '__main__':
 app = FastAPI()
-ws_manager = WebSocketManager()
-message_handler = MessageHandler()
+db = DB()
+ws_manager = WebSocketManager(db)
+message_handler = MessageHandler(ws_manager, DB)
 
 
 @app.get('/')
