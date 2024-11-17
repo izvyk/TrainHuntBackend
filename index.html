@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>TrainHunt backend test</title>
+        <style>
+            body {
+                margin: 10px;
+                font-family: monospace;
+            }
+            .row {
+                display: flex;
+                flex-direction: row;
+                flex-wrap: wrap;
+                width: 100%;
+                align-items: start;
+            }
+            .column {
+                display: flex;
+                flex-direction: column;
+                flex-basis: 100%;
+                flex: 1;
+            }
+            form {
+                top: 10px;
+                position: sticky;
+            }
+            form button {
+                height: 2em;
+                border-radius: 0;
+                border: 1px solid black;
+            }
+            form textarea {
+                height: calc(100vh - 2 * 10px - 2em);
+                box-sizing: border-box;
+                border: 1px solid black;
+                padding: 5px;
+                resize: none;
+            }
+            #messages div {
+                border: 1px solid black;
+                margin: 0 10px 10px;
+                padding: 5px;
+            }
+        </style>
+    </head>
+    <body>
+        <main class="row">
+            <form class="column" action="" onsubmit="sendMessage(event)">
+                <textarea id="messageText" autocomplete="off"></textarea>
+                <button>Send</button>
+            </form>
+            <div id='messages' class="column"></div>
+        </main>
+        <script>
+            var ws = new WebSocket('ws://localhost:8000/ws');
+            ws.onmessage = function(event) {
+                var messages = document.getElementById('messages')
+                var message = document.createElement('div')
+                var content = document.createTextNode(event.data)
+                message.appendChild(content)
+                messages.appendChild(message)
+            };
+            function sendMessage(event) {
+                var input = document.getElementById('messageText')
+                ws.send(input.value)
+                event.preventDefault()
+            }
+        </script>
+    </body>
+</html>
