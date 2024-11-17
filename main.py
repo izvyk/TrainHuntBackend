@@ -6,6 +6,7 @@ import json
 from enum import Enum
 from dataclasses import dataclass, field, asdict
 from typing import Dict
+import uvicorn # for debugging
 
 
 class UUIDEncoder(json.JSONEncoder):
@@ -46,9 +47,9 @@ class MessageType(Enum):
 @dataclass
 class User:
     id: UUID
-    username: str = field(compare=False)
-    group_id: UUID = field(compare=False)
+    name: str = field(compare=False)
     image: str = field(compare=False)
+    group_id: UUID = field(compare=False, default=None)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), cls=UUIDEncoder)
@@ -56,6 +57,10 @@ class User:
     @classmethod
     def from_json(cls, json_str: str) -> User:
         data = json.loads(json_str)
+        return cls.from_dict(data)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> User:
         return cls(**data)
 
 
@@ -248,9 +253,8 @@ class MessageHandler:
     async def handle_set_user_info(self, user_id: UUID, message: Message) -> Message:
         # TODO notify group members?
         try:
-            user = User.from_json(message.data)
-            user.id = user_id
-            self.db.add_or_update_user(user)
+            user = User.from_dict(message.data | {'id': user_id})
+            self.db.add_or_update_user(user=user)
             return Message(
                 type=MessageType.SUCCESS.value,
                 data='user info saved',
@@ -406,7 +410,7 @@ class MessageHandler:
 app = FastAPI()
 db = DB()
 ws_manager = WebSocketManager(db)
-message_handler = MessageHandler(ws_manager, DB)
+message_handler = MessageHandler(ws_manager, db)
 
 
 @app.get('/')
@@ -420,7 +424,7 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         while True:
             try:
-                message = Message(await ws.receive_text())
+                message = Message.from_json(await ws.receive_text())
                 
                 response = await message_handler.handle_message(user_id, message)
                 
@@ -438,3 +442,7 @@ async def websocket_endpoint(ws: WebSocket):
                 )
     except WebSocketDisconnect:
         await ws_manager.disconnect(user_id)
+
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8000) # for debugging
