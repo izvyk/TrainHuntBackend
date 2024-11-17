@@ -62,8 +62,7 @@
             };
             function sendMessage(event) {
                 var input = document.getElementById('messageText')
-                ws.send(input.name)
-                input.name = ''
+                ws.send(input.value)
                 event.preventDefault()
             }
         </script>
