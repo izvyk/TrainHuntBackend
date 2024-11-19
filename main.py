@@ -1,26 +1,26 @@
 from __future__ import annotations
+
+import os
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
-from uuid import uuid4, UUID
+from uuid import UUID as UUID_non_serializable
 import json
 from enum import Enum
 from dataclasses import dataclass, field, asdict
-from typing import Dict
+from typing import Dict, Any
+import json_fix as _ # for json.dumps() to work on custom classes with __json__ method
 import uvicorn # for debugging
 
 
-class UUIDEncoder(json.JSONEncoder):
-    '''
-        A custom encoder to deal with 'TypeError: Object of type UUID is not JSON serializable' error
-        https://stackoverflow.com/a/48159596
-    '''
-    def default(self, obj):
-        if isinstance(obj, UUID):
-            # if the obj is uuid, we simply return the value of uuid
-            return obj.hex
-        if isinstance(obj, MessageType):
-            return obj.value
-        return json.JSONEncoder.default(self, obj)
+class UUID(UUID_non_serializable):
+    def __json__(self):
+        return self.hex
+
+
+def uuid4():
+    """Generate a random UUID."""
+    return UUID(bytes=os.urandom(16), version=4)
 
 
 class MessageType(Enum):
@@ -45,16 +45,19 @@ class MessageType(Enum):
     CONNECT = 'connect'
     DISCONNECT = 'disconnect'
 
+    def __json__(self):
+        return self.value
+
 
 @dataclass
 class User:
     id: UUID
     name: str = field(compare=False)
     image: str = field(compare=False)
-    group_id: UUID = field(compare=False, default=None)
+    group_id: UUID | None = field(compare=False, default=None)
 
-    def to_json(self) -> str:
-        return json.dumps(asdict(self), cls=UUIDEncoder)
+    # def to_json(self) -> str:
+    #     return json.dumps(asdict(self), cls=UUIDEncoder)
     
     @classmethod
     def from_json(cls, json_str: str) -> User:
@@ -65,6 +68,9 @@ class User:
     def from_dict(cls, data: dict) -> User:
         return cls(**data)
 
+    def __json__(self):
+        return asdict(self)
+
 
 @dataclass
 class Group:
@@ -74,33 +80,45 @@ class Group:
     image: str = field(compare=False)
     members: set[UUID] = field(compare=False, init=False, default_factory=set)
 
-    def to_json(self) -> str:
-        return json.dumps(asdict(self), cls=UUIDEncoder)
+    # def to_json(self) -> str:
+    #     return json.dumps(asdict(self), cls=UUIDEncoder)
 
-    def update_from_json(self, json_str: str):
-        new_group = self.__class__.from_json(json_str)
+    def update_from_dict(self, data: dict):
+        new_group = self.__class__.from_dict(data)
         self.name = new_group.name
         self.image = new_group.image
 
     @classmethod
     def from_json(cls, json_str: str) -> Group:
-        data = json.loads(json_str)
+        return cls.from_dict(json.loads(json_str))
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Group:
         return cls(**data)
+
+    def __json__(self):
+        return asdict(self)
 
 
 @dataclass
 class Message:
     type: MessageType
-    data: str
+    data: Any
     request_id: UUID = field(default_factory=uuid4)
-
-    def to_json(self) -> str:
-        return json.dumps(asdict(self), cls=UUIDEncoder)
+    #
+    # def to_json(self) -> str:
+    #     return json.dumps(asdict(self), cls=UUIDEncoder)
 
     @classmethod
     def from_json(cls, json_str: str) -> Message:
-        data = json.loads(json_str)
+        return cls(**json.loads(json_str))
+
+    @classmethod
+    def from_dict(cls, data: dict) -> Message:
         return cls(**data)
+
+    def __json__(self):
+        return asdict(self)
 
 
 # TODO exceptions
@@ -185,7 +203,8 @@ class WebSocketManager:
 
     async def send_personal_message(self, user_id: UUID, message: Message):
         if user_id in self.__connections:
-            await self.__connections[user_id].send_text(message.to_json())
+            # await self.__connections[user_id].send_text(message.to_json())
+            await self.__connections[user_id].send_json(message)
 
     # TODO overload for group:Group
     async def broadcast_to_group(self, group_id: UUID, message: Message):
@@ -214,7 +233,7 @@ class MessageHandler:
             
             if handler := handlers.get(message_type):
                 return await handler(user_id, message)
-            
+
             return Message(
                 type=MessageType.ERROR,
                 data='unknown message type',
@@ -231,12 +250,16 @@ class MessageHandler:
 
     async def handle_get_user_info(self, user_id: UUID, message: Message) -> Message:
         try:
-            requested_user_id = json.loads(message.data)['user_id']
+            if not (requested_user_id := UUID(message.data.get('user_id'))):
+                return Message(
+                    type=MessageType.ERROR,
+                    data='user_id is missing',
+                    request_id=message.request_id
+                )
             if user := self.db.get_user(requested_user_id):
                 return Message(
-                    # TODO SUCCESS or USER
                     type=MessageType.SUCCESS,
-                    data=user.to_json(),
+                    data=user,
                     request_id=message.request_id
                 )
             return Message(
@@ -259,7 +282,9 @@ class MessageHandler:
             self.db.add_or_update_user(user=user)
             return Message(
                 type=MessageType.SUCCESS,
-                data='user info saved',
+                data={
+                    'user_id': user.id,
+                },
                 request_id=message.request_id
             )
         # TODO specify Exception
@@ -272,21 +297,21 @@ class MessageHandler:
 
     async def handle_get_group_info(self, user_id: UUID, message: Message) -> Message:
         try:
-            if not (group_id := message.data.get('group_id')):
+            if not (group_id := UUID(message.data.get('group_id'))):
                 return Message(
                     type=MessageType.ERROR,
-                    data=f'no group_id is given',
+                    data='group_id is missing',
                     request_id=message.request_id
                 )
             if not (group := self.db.get_group(group_id)):
                 return Message(
                     type=MessageType.ERROR,
-                    data=f'group_id is wrong',
+                    data='group_id is wrong',
                     request_id=message.request_id
                 )
             return Message(
                 type=MessageType.SUCCESS,
-                data=group.to_json(),
+                data=group,
                 request_id=message.request_id
             )
         # TODO specify Exception
@@ -310,15 +335,14 @@ class MessageHandler:
                         request_id=message.request_id
                     )
                 # update group info
-                group.update_from_json(message.data)
+                group.update_from_dict(message.data)
                 return Message(
                     type=MessageType.SUCCESS,
                     data='group updated',
                     request_id=message.request_id
                 )
             
-            group = Group.from_json(message.data)
-            group.admin_id = user_id
+            group = Group.from_dict(message.data | {'admin_id': user_id})
             
             self.db.add_or_update_group(group)
             user.group_id = group.id
@@ -326,7 +350,9 @@ class MessageHandler:
             
             return Message(
                 type=MessageType.SUCCESS,
-                data='group created',
+                data={
+                    'group_id': group.id,
+                },
                 request_id=message.request_id
             )
         # TODO specify Exception
@@ -339,15 +365,15 @@ class MessageHandler:
 
     async def handle_join_group(self, user_id: UUID, message: Message) -> Message:
         try:
-            if not (group_id := message.data.get('group_id')):
+            if not (group_id := UUID(message.data.get('group_id'))):
                 return Message(
                     type=MessageType.ERROR,
-                    data=f'no group_id is given',
+                    data='group_id is missing',
                     request_id=message.request_id
                 )
             self.db.join_group(group_id, user_id)
 
-            self.ws_manager.broadcast_to_group(
+            await self.ws_manager.broadcast_to_group(
                 group_id,
                 Message(
                     type=message.type,
@@ -377,11 +403,11 @@ class MessageHandler:
         if group.admin_id == user_id:
             for member_id in group.members:
                 self.db.leave_group(member_id)
-                self.ws_manager.send_personal_message(
+                await self.ws_manager.send_personal_message(
                     member_id,
                     Message(
                         type=MessageType.LEAVE_GROUP,
-                        data=f'group is deleted',
+                        data='group is deleted',
                         request_id=uuid4()
                     )
                 )
@@ -389,12 +415,12 @@ class MessageHandler:
             self.db.leave_group(user_id)
             return Message(
                 type=MessageType.SUCCESS,
-                data=f'group is deleted',
+                data='group is deleted',
                 request_id=message.request_id
             )
 
         self.db.leave_group(user_id)
-        self.ws_manager.broadcast_to_group(
+        await self.ws_manager.broadcast_to_group(
             group_id,
             Message(
                 type=MessageType.LEAVE_GROUP,
@@ -404,9 +430,10 @@ class MessageHandler:
         )
         return Message(
             type=MessageType.SUCCESS,
-            data=f'leaved the group',
+            data='left the group',
             request_id=message.request_id
         )
+
 
 # if __name__ == '__main__':
 app = FastAPI()
@@ -426,7 +453,7 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         while True:
             try:
-                message = Message.from_json(await ws.receive_text())
+                message = Message.from_dict(await ws.receive_json())
                 
                 response = await message_handler.handle_message(user_id, message)
                 

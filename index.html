@@ -20,6 +20,9 @@
                 flex-basis: 100%;
                 flex: 1;
             }
+            pre {
+                margin: 0;
+            }
             form {
                 top: 10px;
                 position: sticky;
@@ -52,18 +55,22 @@
             <div id='messages' class="column"></div>
         </main>
         <script>
-            var ws = new WebSocket('ws://localhost:8000/ws');
+            const ws = new WebSocket('ws://localhost:8000/ws');
             ws.onmessage = function(event) {
-                var messages = document.getElementById('messages')
-                var message = document.createElement('div')
-                var content = document.createTextNode(event.data)
-                message.appendChild(content)
-                messages.appendChild(message)
+                const messages = document.getElementById('messages');
+                const messageContainer = document.createElement('div');
+                const message = document.createElement('pre');
+
+                const content = document.createTextNode(JSON.stringify(JSON.parse(event.data), undefined, 2));
+                message.appendChild(content);
+
+                messageContainer.appendChild(message);
+                messages.appendChild(messageContainer);
             };
             function sendMessage(event) {
-                var input = document.getElementById('messageText')
-                ws.send(input.value)
-                event.preventDefault()
+                const input = document.getElementById('messageText');
+                ws.send(input.value);
+                event.preventDefault();
             }
         </script>
     </body>
