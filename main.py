@@ -233,7 +233,7 @@ class MessageHandler:
             
             if handler := handlers.get(message_type):
                 return await handler(user_id, message)
-            
+
             return Message(
                 type=MessageType.ERROR,
                 data='unknown message type',
@@ -300,13 +300,13 @@ class MessageHandler:
             if not (group_id := UUID(message.data.get('group_id'))):
                 return Message(
                     type=MessageType.ERROR,
-                    data=f'no group_id is given',
+                    data='group_id is missing',
                     request_id=message.request_id
                 )
             if not (group := self.db.get_group(group_id)):
                 return Message(
                     type=MessageType.ERROR,
-                    data=f'group_id is wrong',
+                    data='group_id is wrong',
                     request_id=message.request_id
                 )
             return Message(
@@ -407,7 +407,7 @@ class MessageHandler:
                     member_id,
                     Message(
                         type=MessageType.LEAVE_GROUP,
-                        data=f'group is deleted',
+                        data='group is deleted',
                         request_id=uuid4()
                     )
                 )
@@ -415,7 +415,7 @@ class MessageHandler:
             self.db.leave_group(user_id)
             return Message(
                 type=MessageType.SUCCESS,
-                data=f'group is deleted',
+                data='group is deleted',
                 request_id=message.request_id
             )
 
@@ -430,7 +430,7 @@ class MessageHandler:
         )
         return Message(
             type=MessageType.SUCCESS,
-            data=f'leaved the group',
+            data='left the group',
             request_id=message.request_id
         )
 
