@@ -19,7 +19,7 @@ class UUID(UUID_non_serializable):
 
 
 def uuid4():
-    """Generate a random UUID."""
+    """Generate a random UUID. Overridden to return the customized UUID type"""
     return UUID(bytes=os.urandom(16), version=4)
 
 
@@ -353,6 +353,7 @@ class MessageHandler:
 
     async def handle_join_group(self, user_id: UUID, message: Message) -> Message:
         try:
+            # TODO check the condition
             if not (group_id := UUID(message.data.get('group_id'))):
                 return Message(
                     type=MessageType.ERROR,
