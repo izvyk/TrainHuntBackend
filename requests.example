@@ -1,0 +1,48 @@
+{
+    "type": "set_user_info",
+    "data": {
+        "name": "Alex",
+        "image": "test"
+    },
+    "request_id": "47df9946afkjghdkfjghdfjg"
+}
+
+{
+    "type": "get_user_info",
+    "data": {
+        "user_id": "d8ec4ec528314c06b2928d878dc2dac4"
+    },
+    "request_id": "48df9946afkjghdkfjghdfjg"
+}
+
+{
+    "type": "set_group_info",
+    "data": {
+        "name": "testgroup"
+    },
+    "request_id": "42df9946afkjghdkfjghdfjg"
+}
+
+{
+    "type": "get_group_info",
+    "data": {
+        "group_id": "33dc23c09afa498e959c44d51d4b66a5"
+    },
+    "request_id": "48df9946afkjghdkfjghdfjg"
+}
+
+{
+    "type": "join_group",
+    "data": {
+        "group_id": "53567da64f444044a447b7797efbe2a9"
+    },
+    "request_id": "59df9946afkjghdkfjghdfjg"
+}
+
+{
+    "type": "leave_group",
+    "data": {
+        "group_id": "53567da64f444044a447b7797efbe2a9"
+    },
+    "request_id": "60df9946afkjghdkfjghdfjg"
+}

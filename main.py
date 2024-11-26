@@ -19,7 +19,7 @@ class UUID(UUID_non_serializable):
 
 
 def uuid4():
-    """Generate a random UUID."""
+    """Generate a random UUID. Overridden to return the customized UUID type"""
     return UUID(bytes=os.urandom(16), version=4)
 
 
@@ -30,7 +30,7 @@ class MessageType(Enum):
     
     # Group related
     # CREATE_GROUP = 'create_group' # = set_group_info
-    # DELETE_GROUP = 'delete_group' # = admin leaves the group
+    DELETE_GROUP = 'delete_group' # != admin leaves the group
     JOIN_GROUP = 'join_group'
     LEAVE_GROUP = 'leave_group'
     GET_GROUP_INFO = 'get_group_info'
@@ -45,9 +45,6 @@ class MessageType(Enum):
     CONNECT = 'connect'
     DISCONNECT = 'disconnect'
 
-    def __json__(self):
-        return self.value
-
 
 @dataclass
 class User:
@@ -56,20 +53,17 @@ class User:
     image: str = field(compare=False)
     group_id: UUID | None = field(compare=False, default=None)
 
-    # def to_json(self) -> str:
-    #     return json.dumps(asdict(self), cls=UUIDEncoder)
-    
-    @classmethod
-    def from_json(cls, json_str: str) -> User:
-        data = json.loads(json_str)
-        return cls.from_dict(data)
+    def to_dict(self) -> dict:
+        return {
+            'user_id': self.id,
+            'name': self.name,
+            'image': self.image,
+            'group_id': self.group_id,
+        }
 
     @classmethod
     def from_dict(cls, data: dict) -> User:
         return cls(**data)
-
-    def __json__(self):
-        return asdict(self)
 
 
 @dataclass
@@ -77,27 +71,22 @@ class Group:
     id: UUID = field(init=False, default_factory=uuid4)
     admin_id: UUID = field(compare=False)
     name: str = field(compare=False)
-    image: str = field(compare=False)
     members: set[UUID] = field(compare=False, init=False, default_factory=set)
-
-    # def to_json(self) -> str:
-    #     return json.dumps(asdict(self), cls=UUIDEncoder)
 
     def update_from_dict(self, data: dict):
         new_group = self.__class__.from_dict(data)
         self.name = new_group.name
-        self.image = new_group.image
-
-    @classmethod
-    def from_json(cls, json_str: str) -> Group:
-        return cls.from_dict(json.loads(json_str))
 
     @classmethod
     def from_dict(cls, data: dict) -> Group:
         return cls(**data)
 
-    def __json__(self):
-        return asdict(self)
+    def to_dict(self) -> dict:
+        return {
+            'group_id': self.id,
+            'name': self.name,
+            'members': self.members,
+        }
 
 
 @dataclass
@@ -105,13 +94,6 @@ class Message:
     type: MessageType
     data: Any
     request_id: UUID = field(default_factory=uuid4)
-    #
-    # def to_json(self) -> str:
-    #     return json.dumps(asdict(self), cls=UUIDEncoder)
-
-    @classmethod
-    def from_json(cls, json_str: str) -> Message:
-        return cls(**json.loads(json_str))
 
     @classmethod
     def from_dict(cls, data: dict) -> Message:
@@ -119,6 +101,13 @@ class Message:
 
     def __json__(self):
         return asdict(self)
+
+    def to_dict(self) -> dict:
+        return {
+            'type': self.type.value,
+            'data': self.data,
+            'request_id': self.request_id,
+        }
 
 
 # TODO exceptions
@@ -165,9 +154,8 @@ class DB:
     
     def delete_group(self, group_id):
         if group := self.__groups.get(group_id):
-            if len(group.members) != 0:
-                # TODO specify the exception type
-                raise Exception('group is not empty')
+            for user in group.members:
+                user.group_id = None
             del self.__groups[group_id]
             
 
@@ -203,8 +191,7 @@ class WebSocketManager:
 
     async def send_personal_message(self, user_id: UUID, message: Message):
         if user_id in self.__connections:
-            # await self.__connections[user_id].send_text(message.to_json())
-            await self.__connections[user_id].send_json(message)
+            await self.__connections[user_id].send_json(message.to_dict())
 
     # TODO overload for group:Group
     async def broadcast_to_group(self, group_id: UUID, message: Message):
@@ -229,6 +216,7 @@ class MessageHandler:
                 MessageType.SET_GROUP_INFO: self.handle_set_group_info,
                 MessageType.JOIN_GROUP: self.handle_join_group,
                 MessageType.LEAVE_GROUP: self.handle_leave_group,
+                MessageType.DELETE_GROUP: self.handle_delete_group,
             }
             
             if handler := handlers.get(message_type):
@@ -259,7 +247,7 @@ class MessageHandler:
             if user := self.db.get_user(requested_user_id):
                 return Message(
                     type=MessageType.SUCCESS,
-                    data=user,
+                    data=user.to_dict(),
                     request_id=message.request_id
                 )
             return Message(
@@ -311,7 +299,7 @@ class MessageHandler:
                 )
             return Message(
                 type=MessageType.SUCCESS,
-                data=group,
+                data=group.to_dict(),
                 request_id=message.request_id
             )
         # TODO specify Exception
@@ -336,6 +324,7 @@ class MessageHandler:
                     )
                 # update group info
                 group.update_from_dict(message.data)
+                self.db.add_or_update_group(group)
                 return Message(
                     type=MessageType.SUCCESS,
                     data='group updated',
@@ -343,7 +332,7 @@ class MessageHandler:
                 )
             
             group = Group.from_dict(message.data | {'admin_id': user_id})
-            
+            group.members.add(user_id)
             self.db.add_or_update_group(group)
             user.group_id = group.id
             self.db.add_or_update_user(user)
@@ -365,18 +354,19 @@ class MessageHandler:
 
     async def handle_join_group(self, user_id: UUID, message: Message) -> Message:
         try:
-            if not (group_id := UUID(message.data.get('group_id'))):
+            if not message.data.get('group_id'):
                 return Message(
                     type=MessageType.ERROR,
                     data='group_id is missing',
                     request_id=message.request_id
                 )
+            group_id = UUID(message.data.get('group_id'))
             self.db.join_group(group_id, user_id)
 
             await self.ws_manager.broadcast_to_group(
                 group_id,
                 Message(
-                    type=message.type,
+                    type=MessageType.JOIN_GROUP,
                     data={'user_id': user_id},
                     request_id=uuid4()
                 )
@@ -397,25 +387,10 @@ class MessageHandler:
 
     async def handle_leave_group(self, user_id: UUID, message: Message) -> Message:
         user = self.db.get_user(user_id)
-        group_id = user.group_id
-        group = self.db.get_group(group_id)
-
-        if group.admin_id == user_id:
-            for member_id in group.members:
-                self.db.leave_group(member_id)
-                await self.ws_manager.send_personal_message(
-                    member_id,
-                    Message(
-                        type=MessageType.LEAVE_GROUP,
-                        data='group is deleted',
-                        request_id=uuid4()
-                    )
-                )
-            self.db.delete_group(group_id)
-            self.db.leave_group(user_id)
+        if not (group_id := user.group_id):
             return Message(
-                type=MessageType.SUCCESS,
-                data='group is deleted',
+                type=MessageType.ERROR,
+                data='user is not a group member',
                 request_id=message.request_id
             )
 
@@ -434,8 +409,34 @@ class MessageHandler:
             request_id=message.request_id
         )
 
+    async def handle_delete_group(self, user_id: UUID, message: Message) -> Message:
+        user = self.db.get_user(user_id)
+        group = self.db.get_group(user.group_id)
 
-# if __name__ == '__main__':
+        if group.admin_id != user_id:
+            return Message(
+                type=MessageType.ERROR,
+                data='only admin can delete the group',
+                request_id=message.request_id
+            )
+
+        for member_id in group.members:
+            await self.ws_manager.send_personal_message(
+                member_id,
+                Message(
+                    type=MessageType.DELETE_GROUP,
+                    data='group is deleted',
+                    request_id=uuid4()
+                )
+            )
+        self.db.delete_group(group.id)
+        return Message(
+            type=MessageType.SUCCESS,
+            data='group is deleted',
+            request_id=message.request_id
+        )
+
+
 app = FastAPI()
 db = DB()
 ws_manager = WebSocketManager(db)
