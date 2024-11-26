@@ -324,6 +324,7 @@ class MessageHandler:
                     )
                 # update group info
                 group.update_from_dict(message.data)
+                self.db.add_or_update_group(group)
                 return Message(
                     type=MessageType.SUCCESS,
                     data='group updated',
@@ -353,19 +354,19 @@ class MessageHandler:
 
     async def handle_join_group(self, user_id: UUID, message: Message) -> Message:
         try:
-            # TODO check the condition
-            if not (group_id := UUID(message.data.get('group_id'))):
+            if not message.data.get('group_id'):
                 return Message(
                     type=MessageType.ERROR,
                     data='group_id is missing',
                     request_id=message.request_id
                 )
+            group_id = UUID(message.data.get('group_id'))
             self.db.join_group(group_id, user_id)
 
             await self.ws_manager.broadcast_to_group(
                 group_id,
                 Message(
-                    type=message.type,
+                    type=MessageType.JOIN_GROUP,
                     data={'user_id': user_id},
                     request_id=uuid4()
                 )
@@ -394,8 +395,6 @@ class MessageHandler:
             )
 
         self.db.leave_group(user_id)
-        user.group_id = None
-        self.db.add_or_update_user(user)
         await self.ws_manager.broadcast_to_group(
             group_id,
             Message(
@@ -414,24 +413,30 @@ class MessageHandler:
         user = self.db.get_user(user_id)
         group = self.db.get_group(user.group_id)
 
-        if group.admin_id == user_id:
-            for member_id in group.members:
-                await self.ws_manager.send_personal_message(
-                    member_id,
-                    Message(
-                        type=MessageType.LEAVE_GROUP,
-                        data='group is deleted',
-                        request_id=uuid4()
-                    )
-                )
-            self.db.delete_group(group.id)
+        if group.admin_id != user_id:
             return Message(
-                type=MessageType.SUCCESS,
-                data='group is deleted',
+                type=MessageType.ERROR,
+                data='only admin can delete the group',
                 request_id=message.request_id
             )
 
-# if __name__ == '__main__':
+        for member_id in group.members:
+            await self.ws_manager.send_personal_message(
+                member_id,
+                Message(
+                    type=MessageType.DELETE_GROUP,
+                    data='group is deleted',
+                    request_id=uuid4()
+                )
+            )
+        self.db.delete_group(group.id)
+        return Message(
+            type=MessageType.SUCCESS,
+            data='group is deleted',
+            request_id=message.request_id
+        )
+
+
 app = FastAPI()
 db = DB()
 ws_manager = WebSocketManager(db)
