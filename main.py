@@ -30,7 +30,7 @@ class MessageType(Enum):
     
     # Group related
     # CREATE_GROUP = 'create_group' # = set_group_info
-    # DELETE_GROUP = 'delete_group' # = admin leaves the group
+    DELETE_GROUP = 'delete_group' # != admin leaves the group
     JOIN_GROUP = 'join_group'
     LEAVE_GROUP = 'leave_group'
     GET_GROUP_INFO = 'get_group_info'
@@ -85,7 +85,7 @@ class Group:
         return {
             'group_id': self.id,
             'name': self.name,
-            'members': self.members | {self.admin_id},
+            'members': self.members,
         }
 
 
@@ -154,9 +154,8 @@ class DB:
     
     def delete_group(self, group_id):
         if group := self.__groups.get(group_id):
-            if len(group.members) != 0:
-                # TODO specify the exception type
-                raise Exception('group is not empty')
+            for user in group.members:
+                user.group_id = None
             del self.__groups[group_id]
             
 
@@ -217,6 +216,7 @@ class MessageHandler:
                 MessageType.SET_GROUP_INFO: self.handle_set_group_info,
                 MessageType.JOIN_GROUP: self.handle_join_group,
                 MessageType.LEAVE_GROUP: self.handle_leave_group,
+                MessageType.DELETE_GROUP: self.handle_delete_group,
             }
             
             if handler := handlers.get(message_type):
@@ -331,7 +331,7 @@ class MessageHandler:
                 )
             
             group = Group.from_dict(message.data | {'admin_id': user_id})
-            
+            group.members.add(user_id)
             self.db.add_or_update_group(group)
             user.group_id = group.id
             self.db.add_or_update_user(user)
@@ -386,29 +386,16 @@ class MessageHandler:
 
     async def handle_leave_group(self, user_id: UUID, message: Message) -> Message:
         user = self.db.get_user(user_id)
-        group_id = user.group_id
-        group = self.db.get_group(group_id)
-
-        if group.admin_id == user_id:
-            for member_id in group.members:
-                self.db.leave_group(member_id)
-                await self.ws_manager.send_personal_message(
-                    member_id,
-                    Message(
-                        type=MessageType.LEAVE_GROUP,
-                        data='group is deleted',
-                        request_id=uuid4()
-                    )
-                )
-            self.db.delete_group(group_id)
-            self.db.leave_group(user_id)
+        if not (group_id := user.group_id):
             return Message(
-                type=MessageType.SUCCESS,
-                data='group is deleted',
+                type=MessageType.ERROR,
+                data='user is not a group member',
                 request_id=message.request_id
             )
 
         self.db.leave_group(user_id)
+        user.group_id = None
+        self.db.add_or_update_user(user)
         await self.ws_manager.broadcast_to_group(
             group_id,
             Message(
@@ -423,6 +410,26 @@ class MessageHandler:
             request_id=message.request_id
         )
 
+    async def handle_delete_group(self, user_id: UUID, message: Message) -> Message:
+        user = self.db.get_user(user_id)
+        group = self.db.get_group(user.group_id)
+
+        if group.admin_id == user_id:
+            for member_id in group.members:
+                await self.ws_manager.send_personal_message(
+                    member_id,
+                    Message(
+                        type=MessageType.LEAVE_GROUP,
+                        data='group is deleted',
+                        request_id=uuid4()
+                    )
+                )
+            self.db.delete_group(group.id)
+            return Message(
+                type=MessageType.SUCCESS,
+                data='group is deleted',
+                request_id=message.request_id
+            )
 
 # if __name__ == '__main__':
 app = FastAPI()
