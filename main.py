@@ -45,9 +45,6 @@ class MessageType(Enum):
     CONNECT = 'connect'
     DISCONNECT = 'disconnect'
 
-    def __json__(self):
-        return self.value
-
 
 @dataclass
 class User:
@@ -56,20 +53,17 @@ class User:
     image: str = field(compare=False)
     group_id: UUID | None = field(compare=False, default=None)
 
-    # def to_json(self) -> str:
-    #     return json.dumps(asdict(self), cls=UUIDEncoder)
-    
-    @classmethod
-    def from_json(cls, json_str: str) -> User:
-        data = json.loads(json_str)
-        return cls.from_dict(data)
+    def to_dict(self) -> dict:
+        return {
+            'user_id': self.id,
+            'name': self.name,
+            'image': self.image,
+            'group_id': self.group_id,
+        }
 
     @classmethod
     def from_dict(cls, data: dict) -> User:
         return cls(**data)
-
-    def __json__(self):
-        return asdict(self)
 
 
 @dataclass
@@ -77,27 +71,22 @@ class Group:
     id: UUID = field(init=False, default_factory=uuid4)
     admin_id: UUID = field(compare=False)
     name: str = field(compare=False)
-    image: str = field(compare=False)
     members: set[UUID] = field(compare=False, init=False, default_factory=set)
-
-    # def to_json(self) -> str:
-    #     return json.dumps(asdict(self), cls=UUIDEncoder)
 
     def update_from_dict(self, data: dict):
         new_group = self.__class__.from_dict(data)
         self.name = new_group.name
-        self.image = new_group.image
-
-    @classmethod
-    def from_json(cls, json_str: str) -> Group:
-        return cls.from_dict(json.loads(json_str))
 
     @classmethod
     def from_dict(cls, data: dict) -> Group:
         return cls(**data)
 
-    def __json__(self):
-        return asdict(self)
+    def to_dict(self) -> dict:
+        return {
+            'group_id': self.id,
+            'name': self.name,
+            'members': self.members | {self.admin_id},
+        }
 
 
 @dataclass
@@ -105,13 +94,6 @@ class Message:
     type: MessageType
     data: Any
     request_id: UUID = field(default_factory=uuid4)
-    #
-    # def to_json(self) -> str:
-    #     return json.dumps(asdict(self), cls=UUIDEncoder)
-
-    @classmethod
-    def from_json(cls, json_str: str) -> Message:
-        return cls(**json.loads(json_str))
 
     @classmethod
     def from_dict(cls, data: dict) -> Message:
@@ -119,6 +101,13 @@ class Message:
 
     def __json__(self):
         return asdict(self)
+
+    def to_dict(self) -> dict:
+        return {
+            'type': self.type.value,
+            'data': self.data,
+            'request_id': self.request_id,
+        }
 
 
 # TODO exceptions
@@ -203,8 +192,7 @@ class WebSocketManager:
 
     async def send_personal_message(self, user_id: UUID, message: Message):
         if user_id in self.__connections:
-            # await self.__connections[user_id].send_text(message.to_json())
-            await self.__connections[user_id].send_json(message)
+            await self.__connections[user_id].send_json(message.to_dict())
 
     # TODO overload for group:Group
     async def broadcast_to_group(self, group_id: UUID, message: Message):
@@ -259,7 +247,7 @@ class MessageHandler:
             if user := self.db.get_user(requested_user_id):
                 return Message(
                     type=MessageType.SUCCESS,
-                    data=user,
+                    data=user.to_dict(),
                     request_id=message.request_id
                 )
             return Message(
@@ -311,7 +299,7 @@ class MessageHandler:
                 )
             return Message(
                 type=MessageType.SUCCESS,
-                data=group,
+                data=group.to_dict(),
                 request_id=message.request_id
             )
         # TODO specify Exception
