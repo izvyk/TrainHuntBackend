@@ -65,10 +65,10 @@ class User:
     def from_dict(cls, data: dict) -> User:
         # return cls(**data)
         return cls(
-            id=UUID(data['id']),
+            id=data['id'],
             name=data['userName'],
             image=data['picture'],
-            group_id=UUID(data['groupId']),
+            group_id=data.get('groupId')
         )
 
 
