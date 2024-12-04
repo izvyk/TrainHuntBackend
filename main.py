@@ -63,7 +63,13 @@ class User:
 
     @classmethod
     def from_dict(cls, data: dict) -> User:
-        return cls(**data)
+        # return cls(**data)
+        return cls(
+            id=UUID(data['id']),
+            name=data['userName'],
+            image=data['picture'],
+            group_id=UUID(data['groupId']),
+        )
 
 
 @dataclass
@@ -97,7 +103,12 @@ class Message:
 
     @classmethod
     def from_dict(cls, data: dict) -> Message:
-        return cls(**data)
+        # return cls(**data)
+        return cls(
+            type=data['type'],
+            data=data['data'],
+            request_id=data['requestId']
+        )
 
     def __json__(self):
         return asdict(self)
@@ -454,8 +465,10 @@ async def websocket_endpoint(ws: WebSocket):
     try:
         while True:
             try:
-                message = Message.from_dict(await ws.receive_json())
-                
+                text = await ws.receive_text()
+                text = text.replace("'", '"')
+                print(text)
+                message = Message.from_dict(json.loads(text))
                 response = await message_handler.handle_message(user_id, message)
                 
                 # Respond
