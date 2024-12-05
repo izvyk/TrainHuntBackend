@@ -48,7 +48,7 @@ class MessageType(Enum):
 
 class FieldNames(StrEnum):
     MESSAGE_REQUEST_ID = 'requestId'
-    MESSAGE_TYPE = 'тип'
+    MESSAGE_TYPE = 'type'
     MESSAGE_DATA = 'data'
 
     USER_ID = 'userId'
