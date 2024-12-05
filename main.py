@@ -6,7 +6,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from uuid import UUID as UUID_non_serializable
 import json
-from enum import Enum
+from enum import Enum, StrEnum
 from dataclasses import dataclass, field, asdict
 from typing import Dict, Any
 import json_fix as _ # for json.dumps() to work on custom classes with __json__ method
@@ -46,7 +46,7 @@ class MessageType(Enum):
     DISCONNECT = 'disconnect'
 
 
-class FieldNames(Enum):
+class FieldNames(StrEnum):
     MESSAGE_REQUEST_ID = 'requestId'
     MESSAGE_TYPE = 'тип'
     MESSAGE_DATA = 'data'
