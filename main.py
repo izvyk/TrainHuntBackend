@@ -46,6 +46,22 @@ class MessageType(Enum):
     DISCONNECT = 'disconnect'
 
 
+class FieldNames(Enum):
+    MESSAGE_REQUEST_ID = 'requestId'
+    MESSAGE_TYPE = 'тип'
+    MESSAGE_DATA = 'data'
+
+    USER_ID = 'userId'
+    USER_NAME = 'userName'
+    USER_IMAGE = 'picture'
+    USER_GROUP_ID = 'groupId'
+
+    GROUP_ID = 'groupId'
+    GROUP_NAME = 'groupName'
+    GROUP_MEMBERS = 'groupMembers'
+    GROUP_ADMIN_ID = 'groupAdminId'
+
+
 @dataclass
 class User:
     id: UUID
@@ -53,22 +69,26 @@ class User:
     image: str = field(compare=False)
     group_id: UUID | None = field(compare=False, default=None)
 
+# TODO UUID control
     def to_dict(self) -> dict:
         return {
-            'user_id': self.id,
-            'name': self.name,
-            'image': self.image,
-            'group_id': self.group_id,
+            FieldNames.USER_ID.value: self.id,
+            FieldNames.USER_NAME: self.name,
+            FieldNames.USER_IMAGE: self.image,
+            FieldNames.USER_GROUP_ID: self.group_id,
         }
 
+# TODO group_id
     @classmethod
     def from_dict(cls, data: dict) -> User:
         # return cls(**data)
+        if group_id := data.get(FieldNames.USER_GROUP_ID):
+            group_id = UUID(group_id)
         return cls(
-            id=data['id'],
-            name=data['userName'],
-            image=data['picture'],
-            group_id=data.get('groupId')
+            id=data[FieldNames.USER_ID],
+            name=data[FieldNames.USER_NAME],
+            image=data[FieldNames.USER_IMAGE],
+            group_id=group_id
         )
 
 
@@ -89,9 +109,9 @@ class Group:
 
     def to_dict(self) -> dict:
         return {
-            'group_id': self.id,
-            'name': self.name,
-            'members': self.members,
+            FieldNames.GROUP_ID: self.id,
+            FieldNames.GROUP_NAME: self.name,
+            FieldNames.GROUP_MEMBERS: self.members,
         }
 
 
@@ -105,19 +125,23 @@ class Message:
     def from_dict(cls, data: dict) -> Message:
         # return cls(**data)
         return cls(
-            type=data['type'],
-            data=data['data'],
-            request_id=data['requestId']
+            type=data[FieldNames.MESSAGE_TYPE],
+            data=data[FieldNames.MESSAGE_DATA],
+            request_id=data[FieldNames.MESSAGE_REQUEST_ID]
         )
 
     def __json__(self):
-        return asdict(self)
+        return {
+            FieldNames.MESSAGE_TYPE: self.type,
+            FieldNames.MESSAGE_DATA: self.data,
+            FieldNames.MESSAGE_REQUEST_ID: self.request_id,
+        }
 
     def to_dict(self) -> dict:
         return {
-            'type': self.type.value,
-            'data': self.data,
-            'request_id': self.request_id,
+            FieldNames.MESSAGE_TYPE: self.type.value,
+            FieldNames.MESSAGE_DATA: self.data,
+            FieldNames.MESSAGE_REQUEST_ID: self.request_id,
         }
 
 
@@ -192,7 +216,7 @@ class WebSocketManager:
                     Message(
                         type=MessageType.DISCONNECT,
                         data={
-                            'user_id': user_id,
+                            FieldNames.USER_ID: user_id,
                         },
                         request_id=uuid4()
                     )
@@ -277,12 +301,15 @@ class MessageHandler:
     async def handle_set_user_info(self, user_id: UUID, message: Message) -> Message:
         # TODO notify group members?
         try:
-            user = User.from_dict(message.data | {'id': user_id})
-            self.db.add_or_update_user(user=user)
+            # Do not allow to update group_id directly
+            if old_user := self.db.get_user(user_id):
+                message.data = message.data | {FieldNames.USER_GROUP_ID: old_user.group_id}
+            new_user = User.from_dict(message.data | {FieldNames.USER_ID: user_id})
+            self.db.add_or_update_user(user=new_user)
             return Message(
                 type=MessageType.SUCCESS,
                 data={
-                    'user_id': user.id,
+                    FieldNames.USER_ID: user_id,
                 },
                 request_id=message.request_id
             )
@@ -296,7 +323,7 @@ class MessageHandler:
 
     async def handle_get_group_info(self, user_id: UUID, message: Message) -> Message:
         try:
-            if not (group_id := UUID(message.data.get('group_id'))):
+            if not (group_id := UUID(message.data.get(FieldNames.GROUP_ID))):
                 return Message(
                     type=MessageType.ERROR,
                     data='group_id is missing',
@@ -342,7 +369,7 @@ class MessageHandler:
                     request_id=message.request_id
                 )
             
-            group = Group.from_dict(message.data | {'admin_id': user_id})
+            group = Group.from_dict(message.data | {FieldNames.GROUP_ADMIN_ID: user_id})
             group.members.add(user_id)
             self.db.add_or_update_group(group)
             user.group_id = group.id
@@ -351,7 +378,7 @@ class MessageHandler:
             return Message(
                 type=MessageType.SUCCESS,
                 data={
-                    'group_id': group.id,
+                    FieldNames.GROUP_ID: group.id,
                 },
                 request_id=message.request_id
             )
@@ -365,20 +392,20 @@ class MessageHandler:
 
     async def handle_join_group(self, user_id: UUID, message: Message) -> Message:
         try:
-            if not message.data.get('group_id'):
+            if not message.data.get(FieldNames.GROUP_ID):
                 return Message(
                     type=MessageType.ERROR,
                     data='group_id is missing',
                     request_id=message.request_id
                 )
-            group_id = UUID(message.data.get('group_id'))
+            group_id = UUID(message.data.get(FieldNames.GROUP_ID))
             self.db.join_group(group_id, user_id)
 
             await self.ws_manager.broadcast_to_group(
                 group_id,
                 Message(
                     type=MessageType.JOIN_GROUP,
-                    data={'user_id': user_id},
+                    data={FieldNames.USER_ID: user_id},
                     request_id=uuid4()
                 )
             )
@@ -410,7 +437,7 @@ class MessageHandler:
             group_id,
             Message(
                 type=MessageType.LEAVE_GROUP,
-                data={'user_id': user_id},
+                data={FieldNames.USER_ID: user_id},
                 request_id=uuid4()
             )
         )
