@@ -153,47 +153,68 @@ class DB:
         self.__groups = dict()
 
     def add_or_update_user(self, user: User):
+        logger.debug(f'DB: add_or_update_user with id {user.id}')
         self.__users[user.id] = user
 
     def get_user(self, user_id: UUID) -> User:
-        return self.__users.get(user_id)
+        logger.debug(f'DB: get_user with id {user_id}')
+        if not (user := self.__users.get(user_id)):
+            logger.debug(f'DB: \tnot found')
+        return user
     
     def add_or_update_group(self, group: Group):
+        logger.debug(f'DB: add_or_update_group with id {group.id}')
         self.__groups[group.id] = group
 
     def get_group(self, group_id: UUID) -> Group:
-        return self.__groups.get(group_id)
+        logger.debug(f'DB: get_group with id {group_id}')
+        if not (group := self.__groups.get(group_id)):
+            logger.debug(f'DB: \tnot found')
+        return group
 
     def join_group(self, group_id: UUID, user_id: UUID):
+        logger.debug(f'DB: join_group with group_id {group_id} and user_id {user_id}')
         user = self.__users.get(user_id)
         group = self.__groups.get(group_id)
 
         if not user or not group:
             raise ValueError('wrong id')
 
-        # check if user is an admin
-        if current_group_id := user.group_id:
-            if current_group := self.__groups.get(current_group_id):
-                if current_group.admin_id == user_id:
-                    raise ValueError('admin cannot join a group')
-                # else: # change group
-            # else: # member of non-existent group
+        if current_group_id := user.group_id: # if a group member
+            if current_group := self.__groups.get(current_group_id): # if such a group exists
+                if current_group.admin_id == user_id: # if user is an admin of that group
+                    logger.debug(f'DB: \tadmin cannot join a group')
+                    raise ValueError('admin cannot join a group') # TODO handle
+                else: # change group
+                    logger.debug(f'DB: \tchanging the group from id f{current_group_id} to id {group_id}')
+            else: # member of non-existent group
+                logger.error(f'DB: \tuser with id {user_id} is a member of a non-existent group with id {current_group_id}')
         # else: # not a group member
         group.members.add(user_id)
+        logger.debug(f'DB: \tuser with id {user_id} successfully joined the group with id {group_id}')
+
 
     def leave_group(self, user_id: UUID):
+        logger.debug(f'DB: leave_group with user_id {user_id}')
         if user := self.__users.get(user_id):
             if group := self.__groups.get(user.group_id):
                 group.members.remove(user_id)
+            else:
+                logger.error(f'DB: \tuser with id {user_id} is removed from the non-existent group with id {user.group_id}')
 
             user.group_id = None
+        else:
+            logger.error(f'DB: \tuser with id {user_id} is not found')
     
     def delete_group(self, group_id):
+        logger.debug(f'DB: delete_group with id {group_id}')
         if group := self.__groups.get(group_id):
             for user in group.members:
+                logger.debug(f'DB: \tdelete a member with id {user.id}')
                 user.group_id = None
             del self.__groups[group_id]
-            
+        logger.debug(f'DB: \tgroup with id {group_id} is deleted successfully')
+
 
 class WebSocketManager:
     def __init__(self, db: DB):
