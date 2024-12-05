@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -479,11 +480,22 @@ app = FastAPI()
 db = DB()
 ws_manager = WebSocketManager(db)
 message_handler = MessageHandler(ws_manager, db)
+logger = logging.getLogger('uvicorn.error')
 
 
 @app.get('/')
 async def get():
     return FileResponse('index.html')
+
+
+def log_message(func, text):
+    LOG_MAX_MESSAGE_LINES = 15
+    textlines = text.splitlines()
+    for line in textlines[:LOG_MAX_MESSAGE_LINES]:
+        func(f'\t{line}')
+    if len(textlines) > LOG_MAX_MESSAGE_LINES:
+        func('\t...')
+        func(f'\t{len(textlines) - LOG_MAX_MESSAGE_LINES} more lines are suppressed')
 
 
 @app.websocket('/ws')
@@ -494,7 +506,10 @@ async def websocket_endpoint(ws: WebSocket):
             try:
                 text = await ws.receive_text()
                 text = text.replace("'", '"')
-                print(text)
+
+                logger.debug(f'Received a message from the user with id {user_id}:')
+                log_message(logger.debug, text)
+
                 message = Message.from_dict(json.loads(text))
                 response = await message_handler.handle_message(user_id, message)
                 
@@ -502,6 +517,9 @@ async def websocket_endpoint(ws: WebSocket):
                 await ws_manager.send_personal_message(user_id, response)
                 
             except (json.JSONDecodeError, TypeError):
+                logger.warning(f'Invalid message received from the user {user_id}:')
+                log_message(logger.warning, text)
+
                 await ws_manager.send_personal_message(
                     user_id,
                     Message(
