@@ -16,7 +16,7 @@ import uvicorn # for debugging
 
 class UUID(UUID_non_serializable):
     def __json__(self):
-        return self.hex
+        return str(self)
 
 
 def uuid4():
