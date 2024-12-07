@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -85,27 +86,34 @@ class User:
         if group_id := data.get(FieldNames.USER_GROUP_ID):
             group_id = UUID(group_id)
         return cls(
-            id=data[FieldNames.USER_ID],
+            id=UUID(data[FieldNames.USER_ID]),
             name=data[FieldNames.USER_NAME],
             image=data[FieldNames.USER_IMAGE],
             group_id=group_id
         )
 
+    # def update_from_dict(self, data: dict):
+    #     self.name = data[FieldNames.USER_NAME]
+    #     self.image = data[FieldNames.USER_IMAGE]
+
 
 @dataclass
 class Group:
-    id: UUID = field(init=False, default_factory=uuid4)
+    id: UUID
     admin_id: UUID = field(compare=False)
     name: str = field(compare=False)
     members: set[UUID] = field(compare=False, init=False, default_factory=set)
 
     def update_from_dict(self, data: dict):
-        new_group = self.__class__.from_dict(data)
-        self.name = new_group.name
+        self.name = data[FieldNames.GROUP_NAME]
 
     @classmethod
     def from_dict(cls, data: dict) -> Group:
-        return cls(**data)
+        return cls(
+            id=UUID(data[FieldNames.GROUP_ID]),
+            admin_id=UUID(data[FieldNames.GROUP_ADMIN_ID]),
+            name=data[FieldNames.GROUP_NAME]
+        )
 
     def to_dict(self) -> dict:
         return {
@@ -127,7 +135,7 @@ class Message:
         return cls(
             type=data[FieldNames.MESSAGE_TYPE],
             data=data[FieldNames.MESSAGE_DATA],
-            request_id=data[FieldNames.MESSAGE_REQUEST_ID]
+            request_id=UUID(data[FieldNames.MESSAGE_REQUEST_ID])
         )
 
     def __json__(self):
@@ -152,47 +160,71 @@ class DB:
         self.__groups = dict()
 
     def add_or_update_user(self, user: User):
+        logger.debug(f'DB: add_or_update_user with id {user.id}')
         self.__users[user.id] = user
 
     def get_user(self, user_id: UUID) -> User:
-        return self.__users.get(user_id)
+        logger.debug(f'DB: get_user with id {user_id}')
+        if not (user := self.__users.get(user_id)):
+            logger.debug(f'DB: get_user: user with id {user_id} is not found')
+        return user
     
     def add_or_update_group(self, group: Group):
+        logger.debug(f'DB: add_or_update_group with id {group.id}')
         self.__groups[group.id] = group
 
     def get_group(self, group_id: UUID) -> Group:
-        return self.__groups.get(group_id)
+        logger.debug(f'DB: get_group with id {group_id}')
+        if not (group := self.__groups.get(group_id)):
+            logger.debug(f'DB: get_group: group with id {group_id} is not found')
+        return group
 
     def join_group(self, group_id: UUID, user_id: UUID):
+        logger.debug(f'DB: join_group with group_id {group_id} and user_id {user_id}')
         user = self.__users.get(user_id)
         group = self.__groups.get(group_id)
 
         if not user or not group:
-            raise ValueError('wrong id')
+            logger.warning(f'DB: join_group: group_id {group_id} or user_id {user_id} does not exist')
+            raise ValueError('wrong id') #TODO handle
 
-        # check if user is an admin
-        if current_group_id := user.group_id:
-            if current_group := self.__groups.get(current_group_id):
-                if current_group.admin_id == user_id:
-                    raise ValueError('admin cannot join a group')
-                # else: # change group
-            # else: # member of non-existent group
+        if current_group_id := user.group_id: # if a group member
+            if current_group := self.__groups.get(current_group_id): # if such a group exists
+                if current_group.admin_id == user_id: # if user is an admin of that group
+                    logger.debug(f'DB: \tadmin cannot join a group')
+                    raise ValueError('admin cannot join a group') # TODO handle
+                else: # change group
+                    logger.debug(f'DB: \tchanging the group from id f{current_group_id} to id {group_id}')
+            else: # member of non-existent group
+                logger.error(f'DB: \tuser with id {user_id} is a member of a non-existent group with id {current_group_id}')
         # else: # not a group member
         group.members.add(user_id)
+        logger.debug(f'DB: \tuser with id {user_id} successfully joined the group with id {group_id}')
 
     def leave_group(self, user_id: UUID):
+        logger.debug(f'DB: leave_group with user_id {user_id}')
         if user := self.__users.get(user_id):
             if group := self.__groups.get(user.group_id):
                 group.members.remove(user_id)
+            else:
+                logger.error(f'DB: \tuser with id {user_id} is removed from the non-existent group with id {user.group_id}')
 
             user.group_id = None
+        else:
+            logger.error(f'DB: \tuser with id {user_id} is not found')
     
     def delete_group(self, group_id):
+        logger.debug(f'DB: delete_group with id {group_id}')
         if group := self.__groups.get(group_id):
             for user in group.members:
+                logger.debug(f'DB: \tdelete a member with id {user.id}')
                 user.group_id = None
             del self.__groups[group_id]
-            
+            logger.debug(f'DB: \tgroup with id {group_id} is deleted successfully')
+            return
+        logger.debug(f'DB: \tgroup with id {group_id} is not found')
+
+
 
 class WebSocketManager:
     def __init__(self, db: DB):
@@ -225,6 +257,8 @@ class WebSocketManager:
     # TODO reconnect
 
     async def send_personal_message(self, user_id: UUID, message: Message):
+        if not message:
+            logger.warning(f'send_personal_message: message is None')
         if user_id in self.__connections:
             await self.__connections[user_id].send_json(message.to_dict())
 
@@ -255,7 +289,11 @@ class MessageHandler:
             }
             
             if handler := handlers.get(message_type):
+                logger.info(f'handle_message: {handler.__name__} will be used')
+
                 return await handler(user_id, message)
+
+            logger.warning(f'handle_message: no sutable handler for {message_type} is found')
 
             return Message(
                 type=MessageType.ERROR,
@@ -265,6 +303,7 @@ class MessageHandler:
         
         # TODO specify Exception
         except Exception as e:
+            logger.warning(f'Unknown error: {e}')
             return Message(
                 type=MessageType.ERROR,
                 data=str(e),
@@ -273,25 +312,36 @@ class MessageHandler:
 
     async def handle_get_user_info(self, user_id: UUID, message: Message) -> Message:
         try:
-            if not (requested_user_id := UUID(message.data.get('user_id'))):
+            if not (requested_user_id := message.data.get(FieldNames.USER_ID)):
+                logger.warning(f'handle_get_user_info: message has no {FieldNames.USER_ID}')
                 return Message(
                     type=MessageType.ERROR,
-                    data='user_id is missing',
+                    data=f'{FieldNames.USER_ID} is missing',
                     request_id=message.request_id
                 )
+            requested_user_id = UUID(requested_user_id)
             if user := self.db.get_user(requested_user_id):
                 return Message(
                     type=MessageType.SUCCESS,
                     data=user.to_dict(),
                     request_id=message.request_id
                 )
+            logger.warning(f'handle_get_user_info: user with id {user_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='user not found',
                 request_id=message.request_id
             )
         # TODO specify Exception
+        except ValueError:
+            logger.warning(f'handle_get_user_info: {message.data.get(FieldNames.USER_ID)} is an invalid UUID')
+            return Message(
+                type=MessageType.ERROR,
+                data=f'{FieldNames.USER_ID} is an invalid UUID',
+                request_id=message.request_id
+            )
         except Exception as e:
+            logger.warning(f'handle_get_user_info: unknown error: {e}')
             return Message(
                 type=MessageType.ERROR,
                 data=str(e),
@@ -301,11 +351,22 @@ class MessageHandler:
     async def handle_set_user_info(self, user_id: UUID, message: Message) -> Message:
         # TODO notify group members?
         try:
-            # Do not allow to update group_id directly
-            if old_user := self.db.get_user(user_id):
-                message.data = message.data | {FieldNames.USER_GROUP_ID: old_user.group_id}
-            new_user = User.from_dict(message.data | {FieldNames.USER_ID: user_id})
+            message.data = message.data | {
+                FieldNames.USER_ID: user_id.hex,
+                FieldNames.GROUP_ID: None,
+            }
+
+            if not (old_user := self.db.get_user(user_id)): # Creating a user
+                logger.debug(f'handle_set_user_info: creating user with id {user_id}')
+            else: # Updating the user
+                logger.debug(f'handle_set_user_info: updating user with id {user_id}')
+                if group_id := old_user.group_id:
+                    message.data = message.data | {FieldNames.USER_GROUP_ID: group_id.hex}
+
+            new_user = User.from_dict(message.data)
             self.db.add_or_update_user(user=new_user)
+
+            logger.debug(f'handle_set_user_info: success')
             return Message(
                 type=MessageType.SUCCESS,
                 data={
@@ -315,24 +376,28 @@ class MessageHandler:
             )
         # TODO specify Exception
         except Exception as e:
+            logger.warning(f'handle_set_user_info: unknown error: {e}')
             return Message(
                 type=MessageType.ERROR,
-                data=f'failed to update user info: {str(e)}',
+                data='failed to create or update user',
                 request_id=message.request_id
             )
 
     async def handle_get_group_info(self, user_id: UUID, message: Message) -> Message:
         try:
-            if not (group_id := UUID(message.data.get(FieldNames.GROUP_ID))):
+            if not (group_id := message.data.get(FieldNames.GROUP_ID)):
+                logger.warning(f'handle_get_group_info: message has no {FieldNames.GROUP_ID}')
                 return Message(
                     type=MessageType.ERROR,
-                    data='group_id is missing',
+                    data=f'{FieldNames.GROUP_ID} is missing',
                     request_id=message.request_id
                 )
+            group_id = UUID(group_id)
             if not (group := self.db.get_group(group_id)):
+                logger.warning(f'handle_get_group_info: group with id {group_id} is not found')
                 return Message(
                     type=MessageType.ERROR,
-                    data='group_id is wrong',
+                    data=f'group with {FieldNames.GROUP_ID} = {group_id} is not found',
                     request_id=message.request_id
                 )
             return Message(
@@ -340,32 +405,56 @@ class MessageHandler:
                 data=group.to_dict(),
                 request_id=message.request_id
             )
-        # TODO specify Exception
-        except Exception as e:
+        except ValueError:
+            logger.warning(f'handle_get_group_info: {message.data.get(FieldNames.GROUP_ID)} is an invalid UUID')
             return Message(
                 type=MessageType.ERROR,
-                data=f'failed to get the group: {str(e)}',
+                data=f'{FieldNames.USER_ID} is an invalid UUID',
+                request_id=message.request_id
+            )
+        # TODO specify Exception
+        except Exception as e:
+            logger.warning(f'handle_get_group_info: unknown error: {e}')
+            return Message(
+                type=MessageType.ERROR,
+                data=f'handle_get_group_info: unknown error: {e}',
                 request_id=message.request_id
             )
 
+###########################################################################################################
     async def handle_set_group_info(self, user_id: UUID, message: Message) -> Message:
         try:
-            user = self.db.get_user(user_id)
-            if user.group_id:
-                group = self.db.get_group(user.group_id)
-
-                if group.admin_id != user_id:
+            if not (user := self.db.get_user(user_id)):
+                logger.error(f'handle_set_group_info: user with id {user_id} is not found')
+                return Message(
+                    type=MessageType.ERROR,
+                    data='handle_set_group_info: unknown error',
+                    request_id=message.request_id
+                )
+            if user.group_id: # user is a group member
+                if not (group := self.db.get_group(user.group_id)): # a member of non-existent group
+                    logger.error(f'handle_set_group_info: group with id {user.group_id} is not found')
                     return Message(
                         type=MessageType.ERROR,
-                        data='user is already a group member',
+                        data='handle_set_group_info: unknown error',
                         request_id=message.request_id
                     )
-                # update group info
+
+                if group.admin_id != user_id: # not an admin
+                    logger.error(f'handle_set_group_info: change is not allowed as user is not an admin')
+                    return Message(
+                        type=MessageType.ERROR,
+                        data='user is already a group member, leave a group to create one',
+                        request_id=message.request_id
+                    )
+
                 group.update_from_dict(message.data)
                 self.db.add_or_update_group(group)
+
+                logger.debug(f'handle_set_group_info: group info updated by the admin')
                 return Message(
                     type=MessageType.SUCCESS,
-                    data='group updated',
+                    data=None,
                     request_id=message.request_id
                 )
             
@@ -374,7 +463,8 @@ class MessageHandler:
             self.db.add_or_update_group(group)
             user.group_id = group.id
             self.db.add_or_update_user(user)
-            
+
+            logger.debug(f'handle_set_group_info: created a group with id {group.id}')
             return Message(
                 type=MessageType.SUCCESS,
                 data={
@@ -384,22 +474,25 @@ class MessageHandler:
             )
         # TODO specify Exception
         except Exception as e:
+            logger.error(f'handle_set_group_info: unknown error: {str(e)}')
             return Message(
                 type=MessageType.ERROR,
-                data=f'failed to create group: {str(e)}',
+                data='failed to create group',
                 request_id=message.request_id
             )
 
     async def handle_join_group(self, user_id: UUID, message: Message) -> Message:
+        if not (group_id := message.data.get(FieldNames.GROUP_ID)):
+            logger.debug(f'handle_join_group: {FieldNames.GROUP_ID} is missing')
+            return Message(
+                type=MessageType.ERROR,
+                data=f'{FieldNames.GROUP_ID} is missing',
+                request_id=message.request_id
+            )
         try:
-            if not message.data.get(FieldNames.GROUP_ID):
-                return Message(
-                    type=MessageType.ERROR,
-                    data='group_id is missing',
-                    request_id=message.request_id
-                )
-            group_id = UUID(message.data.get(FieldNames.GROUP_ID))
+            group_id = UUID(group_id)
             self.db.join_group(group_id, user_id)
+            logger.debug(f'handle_join_group: user with id {user_id} joined the group {group_id}')
 
             await self.ws_manager.broadcast_to_group(
                 group_id,
@@ -409,23 +502,39 @@ class MessageHandler:
                     request_id=uuid4()
                 )
             )
+            logger.debug(f'handle_join_group: all the members of the group {group_id} are notified')
 
             return Message(
                 type=MessageType.SUCCESS,
-                data='joined the group',
+                data=None,
                 request_id=message.request_id
             )
-        # TODO specify Exception
-        except Exception as e:
+        except ValueError:
+            logger.error(f'handle_join_group: invalid UUID: {group_id}')
             return Message(
                 type=MessageType.ERROR,
-                data=f'failed to join a group: {str(e)}',
+                data=f'invalid UUID: {group_id}',
+                request_id=message.request_id
+            )
+        except Exception as e:
+            logger.error(f'handle_join_group: unknown error: {str(e)}')
+            return Message(
+                type=MessageType.ERROR,
+                data=f'failed to join a group',
                 request_id=message.request_id
             )
 
     async def handle_leave_group(self, user_id: UUID, message: Message) -> Message:
-        user = self.db.get_user(user_id)
+        if not (user := self.db.get_user(user_id)):
+            logger.error(f'handle_leave_group: user with id {user_id} is not found')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
         if not (group_id := user.group_id):
+            logger.debug(f'handle_leave_group: user with id {user_id} is not a group member')
             return Message(
                 type=MessageType.ERROR,
                 data='user is not a group member',
@@ -433,6 +542,7 @@ class MessageHandler:
             )
 
         self.db.leave_group(user_id)
+        logger.debug(f'handle_leave_group: user with id {user_id} left the group {group_id}')
         await self.ws_manager.broadcast_to_group(
             group_id,
             Message(
@@ -441,17 +551,32 @@ class MessageHandler:
                 request_id=uuid4()
             )
         )
+        logger.debug(f'handle_leave_group: all the members of the group {group_id} are notified')
         return Message(
             type=MessageType.SUCCESS,
-            data='left the group',
+            data=None,
             request_id=message.request_id
         )
 
     async def handle_delete_group(self, user_id: UUID, message: Message) -> Message:
-        user = self.db.get_user(user_id)
-        group = self.db.get_group(user.group_id)
+        if not (user := self.db.get_user(user_id)):
+            logger.error(f'handle_delete_group: user with id {user_id} is not found')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
+        if not (group := self.db.get_group(user.group_id)):
+            logger.error(f'handle_delete_group: group with id {user.group_id} is not found')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
 
         if group.admin_id != user_id:
+            logger.debug(f'handle_delete_group: only admin can delete the group')
             return Message(
                 type=MessageType.ERROR,
                 data='only admin can delete the group',
@@ -468,9 +593,11 @@ class MessageHandler:
                 )
             )
         self.db.delete_group(group.id)
+        logger.debug(f'handle_delete_group: the group with id {group.id} has been deleted successfully')
+
         return Message(
             type=MessageType.SUCCESS,
-            data='group is deleted',
+            data=None,
             request_id=message.request_id
         )
 
@@ -479,11 +606,22 @@ app = FastAPI()
 db = DB()
 ws_manager = WebSocketManager(db)
 message_handler = MessageHandler(ws_manager, db)
+logger = logging.getLogger('uvicorn.error')
 
 
 @app.get('/')
 async def get():
     return FileResponse('index.html')
+
+
+def log_message(func, text):
+    LOG_MAX_MESSAGE_LINES = 15
+    textlines = text.splitlines()
+    for line in textlines[:LOG_MAX_MESSAGE_LINES]:
+        func(f'\t{line}')
+    if len(textlines) > LOG_MAX_MESSAGE_LINES:
+        func('\t...')
+        func(f'\t{len(textlines) - LOG_MAX_MESSAGE_LINES} more lines are suppressed')
 
 
 @app.websocket('/ws')
@@ -493,20 +631,59 @@ async def websocket_endpoint(ws: WebSocket):
         while True:
             try:
                 text = await ws.receive_text()
-                text = text.replace("'", '"')
-                print(text)
+
+                logger.debug(f'Received a message from the user with id {user_id}:')
+                log_message(logger.debug, text)
+
                 message = Message.from_dict(json.loads(text))
                 response = await message_handler.handle_message(user_id, message)
-                
-                # Respond
+
                 await ws_manager.send_personal_message(user_id, response)
-                
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError: # Invalid json
+                logger.warning(f'Invalid json message received from the user {user_id}: failed to decode')
+                log_message(logger.warning, text)
+
+                await ws_manager.send_personal_message(
+                    user_id,
+                    Message(
+                        type=MessageType.ERROR,
+                        data='invalid json',
+                        request_id=uuid4()
+                    )
+                )
+            except TypeError as e:
+                logger.warning(f'test2 Invalid message received from the user {user_id}: {e}')
+                log_message(logger.warning, text)
+
                 await ws_manager.send_personal_message(
                     user_id,
                     Message(
                         type=MessageType.ERROR,
                         data='invalid json format',
+                        request_id=uuid4()
+                    )
+                )
+            except KeyError as e: # Failed to decode a message as there is a key missing
+                logger.warning(f'Invalid message received from the user {user_id}: key {e} is missing')
+                log_message(logger.warning, text)
+
+                await ws_manager.send_personal_message(
+                    user_id,
+                    Message(
+                        type=MessageType.ERROR,
+                        data=f'a key is missing',
+                        request_id=uuid4()
+                    )
+                )
+            except ValueError: # requestId is an invalid UUID
+                logger.warning(f'Invalid message received from the user {user_id}: invalid UUID')
+                log_message(logger.warning, text)
+
+                await ws_manager.send_personal_message(
+                    user_id,
+                    Message(
+                        type=MessageType.ERROR,
+                        data='invalid UUID',
                         request_id=uuid4()
                     )
                 )
