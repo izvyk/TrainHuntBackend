@@ -92,21 +92,28 @@ class User:
             group_id=group_id
         )
 
+    # def update_from_dict(self, data: dict):
+    #     self.name = data[FieldNames.USER_NAME]
+    #     self.image = data[FieldNames.USER_IMAGE]
+
 
 @dataclass
 class Group:
-    id: UUID = field(init=False, default_factory=uuid4)
+    id: UUID
     admin_id: UUID = field(compare=False)
     name: str = field(compare=False)
     members: set[UUID] = field(compare=False, init=False, default_factory=set)
 
     def update_from_dict(self, data: dict):
-        new_group = self.__class__.from_dict(data)
-        self.name = new_group.name
+        self.name = data[FieldNames.GROUP_NAME]
 
     @classmethod
     def from_dict(cls, data: dict) -> Group:
-        return cls(**data)
+        return cls(
+            id=UUID(data[FieldNames.GROUP_ID]),
+            admin_id=UUID(data[FieldNames.GROUP_ADMIN_ID]),
+            name=data[FieldNames.GROUP_NAME]
+        )
 
     def to_dict(self) -> dict:
         return {
@@ -410,6 +417,7 @@ class MessageHandler:
                 request_id=message.request_id
             )
 
+###########################################################################################################
     async def handle_set_group_info(self, user_id: UUID, message: Message) -> Message:
         try:
             if not (user := self.db.get_user(user_id)):
