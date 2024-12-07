@@ -17,7 +17,10 @@
     pip install -r requirements.txt
 
 ### 3. Startup
+#### • For a local development
     fastapi dev main.py
+#### • For a connection from a physical device and/or for detailed logs
+    uvicorn main:app --port 8000 --host 0.0.0.0 --reload --log-level debug
 
 
 ## Setup server access from outside (Windows)
