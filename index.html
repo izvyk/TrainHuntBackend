@@ -72,6 +72,12 @@
                 ws.send(input.value);
                 event.preventDefault();
             }
+
+            document.body.addEventListener('keydown', (event) => {
+                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+                    sendMessage(event);
+                }
+            });
         </script>
     </body>
 </html>
