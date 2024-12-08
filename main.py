@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+from tokenize import group
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -243,16 +244,19 @@ class WebSocketManager:
             del self.__connections[user_id]
             user = self.db.get_user(user_id)
             if user and user.group_id:
-                await self.broadcast_to_group(
-                    user.group_id,
-                    Message(
-                        type=MessageType.DISCONNECT,
-                        data={
-                            FieldNames.USER_ID: user_id,
-                        },
-                        request_id=uuid4()
+                if group := self.db.get_group(user.group_id):
+                    await self.broadcast(
+                        group.members,
+                        Message(
+                            type=MessageType.DISCONNECT,
+                            data={
+                                FieldNames.USER_ID: user_id,
+                            },
+                            request_id=uuid4()
+                        )
                     )
-                )
+                else:
+                    logger.error(f'WebSocketManager: disconnect: group {user.group_id} is not found')
 
     # TODO reconnect
 
@@ -265,23 +269,13 @@ class WebSocketManager:
         """
         if not message:
             logger.warning(f'send_personal_message: message is None')
-        if user_id in self.__connections:
-            await self.__connections[user_id].send_json(message.to_dict())
+            return
+        if user_ws := self.__connections.get(user_id):
+            await user_ws.send_json(message.to_dict())
 
-    # TODO overload for group:Group
-    async def broadcast_to_group(self, group_id: UUID, message: Message):
-        """
-        Send a message to all members of the group identified by group_id
-        Args:
-            group_id: target group's id
-            message: message to send
-
-        Returns:
-
-        """
-        if group := self.db.get_group(group_id):
-            for member_id in group.members:
-                await self.send_personal_message(member_id, message)
+    async def broadcast(self, addressees: set[UUID], message: Message):
+        for addressee_id in addressees:
+            await self.send_personal_message(addressee_id, message)
 
 
 class MessageHandler:
@@ -412,8 +406,8 @@ class MessageHandler:
 
             logger.debug(f'handle_set_user_info: success')
             if old_user and (group := self.db.get_group(old_user.group_id)):
-                await self.ws_manager.broadcast_to_group(
-                    group.id,
+                await self.ws_manager.broadcast(
+                    group.members - {user_id},
                     Message(
                         type=MessageType.SET_USER_INFO,
                         data=new_user.to_dict(),
@@ -527,8 +521,8 @@ class MessageHandler:
                 self.db.add_or_update_group(group)
                 logger.debug(f'handle_set_group_info: group info updated by the admin')
 
-                await self.ws_manager.broadcast_to_group(
-                    group.id,
+                await self.ws_manager.broadcast(
+                    group.members - {user_id},
                     Message(
                         type=MessageType.SET_GROUP_INFO,
                         data=group.to_dict(),
@@ -638,8 +632,8 @@ class MessageHandler:
 
             logger.debug(f'handle_join_group: user with id {user_id} joined the group {target_group_id}')
 
-            await self.ws_manager.broadcast_to_group(
-                target_group_id,
+            await self.ws_manager.broadcast(
+                target_group.members - {user_id},
                 Message(
                     type=MessageType.JOIN_GROUP,
                     data={FieldNames.USER_ID: user_id},
@@ -718,8 +712,8 @@ class MessageHandler:
             self.db.add_or_update_user(user)
 
             logger.debug(f'handle_leave_group: user {user_id} left the group {group_id}')
-            await self.ws_manager.broadcast_to_group(
-                group_id,
+            await self.ws_manager.broadcast(
+                group.members,
                 Message(
                     type=MessageType.LEAVE_GROUP,
                     data={FieldNames.USER_ID: user_id},
