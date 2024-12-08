@@ -538,6 +538,10 @@ class MessageHandler:
                 )
             
             group = Group.from_dict(message.data | {FieldNames.GROUP_ADMIN_ID: user_id.hex})
+
+            if self.db.get_group(group.id):
+                group.id = uuid4()
+
             group.members.add(user_id)
             self.db.add_or_update_group(group)
             user.group_id = group.id
