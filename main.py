@@ -121,6 +121,12 @@ class Group:
 
     @classmethod
     def from_dict(cls, data: dict) -> Group:
+        """
+        Exceptions:
+            - KeyError: some filed is missing
+            - TypeError: UUID is None
+            - ValueError: invalid UUID
+        """
         return cls(
             id=UUID(data[FieldNames.GROUP_ID]),
             admin_id=UUID(data[FieldNames.GROUP_ADMIN_ID]),
@@ -197,51 +203,11 @@ class DB:
             logger.debug(f'DB: get_group: group with id {group_id} is not found')
         return group
 
-    # TODO remove logic from this class
-    def join_group(self, group_id: UUID, user_id: UUID):
-        logger.debug(f'DB: join_group with group_id {group_id} and user_id {user_id}')
-        user = self.__users.get(user_id)
-        group = self.__groups.get(group_id)
-
-        if not user or not group:
-            logger.warning(f'DB: join_group: group_id {group_id} or user_id {user_id} does not exist')
-            raise ValueError('wrong id') #TODO handle
-
-        if current_group_id := user.group_id: # if a group member
-            if current_group := self.__groups.get(current_group_id): # if such a group exists
-                if current_group.admin_id == user_id: # if user is an admin of that group
-                    logger.debug(f'DB: \tadmin cannot join a group')
-                    raise ValueError('admin cannot join a group') # TODO handle
-                else: # change group
-                    logger.debug(f'DB: \tchanging the group from id f{current_group_id} to id {group_id}')
-            else: # member of non-existent group
-                logger.error(f'DB: \tuser with id {user_id} is a member of a non-existent group with id {current_group_id}')
-        # else: # not a group member
-        group.members.add(user_id)
-        logger.debug(f'DB: \tuser with id {user_id} successfully joined the group with id {group_id}')
-
-    def leave_group(self, user_id: UUID):
-        logger.debug(f'DB: leave_group with user_id {user_id}')
-        if user := self.__users.get(user_id):
-            if group := self.__groups.get(user.group_id):
-                group.members.remove(user_id)
-            else:
-                logger.error(f'DB: \tuser with id {user_id} is removed from the non-existent group with id {user.group_id}')
-
-            user.group_id = None
-        else:
-            logger.error(f'DB: \tuser with id {user_id} is not found')
-    
-    def delete_group(self, group_id):
-        logger.debug(f'DB: delete_group with id {group_id}')
-        if group := self.__groups.get(group_id):
-            for user in group.members:
-                logger.debug(f'DB: \tdelete a member with id {user.id}')
-                user.group_id = None
-            del self.__groups[group_id]
-            logger.debug(f'DB: \tgroup with id {group_id} is deleted successfully')
-            return
-        logger.debug(f'DB: \tgroup with id {group_id} is not found')
+    def delete_group(self, group_id: UUID):
+        logger.debug(f'DB: delete_group {group_id}')
+        if group_id not in self.__groups:
+            logger.error(f'DB: delete_group: group with id {group_id} is not found')
+        del self.__groups[group_id]
 
 
 
@@ -577,7 +543,7 @@ class MessageHandler:
                     request_id=message.request_id
                 )
             
-            group = Group.from_dict(message.data | {FieldNames.GROUP_ADMIN_ID: user_id})
+            group = Group.from_dict(message.data | {FieldNames.GROUP_ADMIN_ID: user_id.hex})
             group.members.add(user_id)
             self.db.add_or_update_group(group)
             user.group_id = group.id
@@ -591,12 +557,33 @@ class MessageHandler:
                 },
                 request_id=message.request_id
             )
-        # TODO specify Exception
+
+        except KeyError:
+            logger.debug(f'handle_set_group_info: some field is missing')
+            return Message(
+                type=MessageType.ERROR,
+                data='some field is missing',
+                request_id=message.request_id
+            )
+        except TypeError:
+            logger.debug(f'handle_set_group_info: id is None')
+            return Message(
+                type=MessageType.ERROR,
+                data='id is null',
+                request_id=message.request_id
+            )
+        except ValueError:
+            logger.debug(f'handle_set_group_info: id is invalid')
+            return Message(
+                type=MessageType.ERROR,
+                data='invalid id',
+                request_id=message.request_id
+            )
         except Exception as e:
             logger.error(f'handle_set_group_info: unknown error: {str(e)}')
             return Message(
                 type=MessageType.ERROR,
-                data='failed to create group',
+                data='unknown error',
                 request_id=message.request_id
             )
 
@@ -610,7 +597,7 @@ class MessageHandler:
         Returns:
             A response message with 'success' status and no data or an error message
         """
-        if not (group_id := message.data.get(FieldNames.GROUP_ID)):
+        if not (target_group_id := message.data.get(FieldNames.GROUP_ID)):
             logger.debug(f'handle_join_group: {FieldNames.GROUP_ID} is missing')
             return Message(
                 type=MessageType.ERROR,
@@ -618,19 +605,48 @@ class MessageHandler:
                 request_id=message.request_id
             )
         try:
-            group_id = UUID(group_id)
-            self.db.join_group(group_id, user_id)
-            logger.debug(f'handle_join_group: user with id {user_id} joined the group {group_id}')
+            target_group_id = UUID(target_group_id)
+            if not (target_group := self.db.get_group(target_group_id)):
+                logger.error(f'handle_join_group: no group with id {target_group_id} is found')
+                return Message(
+                    type=MessageType.ERROR,
+                    data=f'no group with {FieldNames.GROUP_ID} {target_group_id} is found',
+                    request_id=message.request_id
+                )
+
+            if not (user := self.db.get_user(user_id)):
+                logger.error(f'handle_join_group: no user with id {user_id} is found')
+                return Message(
+                    type=MessageType.ERROR,
+                    data=f'internal error',
+                    request_id=message.request_id
+                )
+
+            if user.group_id:
+                logger.debug(f'handle_join_group: user with id {user_id} is already a group member')
+                return Message(
+                    type=MessageType.ERROR,
+                    data=f'already a group member',
+                    request_id=message.request_id
+                )
+
+            target_group.members.add(user_id)
+            self.db.add_or_update_group(target_group)
+
+            user.group_id = target_group_id
+            self.db.add_or_update_user(user)
+
+            logger.debug(f'handle_join_group: user with id {user_id} joined the group {target_group_id}')
 
             await self.ws_manager.broadcast_to_group(
-                group_id,
+                target_group_id,
                 Message(
                     type=MessageType.JOIN_GROUP,
                     data={FieldNames.USER_ID: user_id},
                     request_id=uuid4()
                 )
             )
-            logger.debug(f'handle_join_group: all the members of the group {group_id} are notified')
+            logger.debug(f'handle_join_group: all the members of the group {target_group_id} are notified')
 
             return Message(
                 type=MessageType.SUCCESS,
@@ -638,17 +654,17 @@ class MessageHandler:
                 request_id=message.request_id
             )
         except ValueError:
-            logger.error(f'handle_join_group: invalid UUID: {group_id}')
+            logger.error(f'handle_join_group: invalid UUID: {target_group_id}')
             return Message(
                 type=MessageType.ERROR,
-                data=f'invalid UUID: {group_id}',
+                data=f'invalid UUID: {target_group_id}',
                 request_id=message.request_id
             )
         except Exception as e:
             logger.error(f'handle_join_group: unknown error: {str(e)}')
             return Message(
                 type=MessageType.ERROR,
-                data=f'failed to join a group',
+                data='internal error',
                 request_id=message.request_id
             )
 
@@ -677,23 +693,59 @@ class MessageHandler:
                 data='user is not a group member',
                 request_id=message.request_id
             )
+        try:
+            group_id = UUID(group_id)
+            if not (group := self.db.get_group(group_id)):
+                logger.error(f'handle_leave_group: no group with id {group_id} is found')
+                return Message(
+                    type=MessageType.ERROR,
+                    data=f'no group with {FieldNames.GROUP_ID} {group_id} is found',
+                    request_id=message.request_id
+                )
 
-        self.db.leave_group(user_id)
-        logger.debug(f'handle_leave_group: user with id {user_id} left the group {group_id}')
-        await self.ws_manager.broadcast_to_group(
-            group_id,
-            Message(
-                type=MessageType.LEAVE_GROUP,
-                data={FieldNames.USER_ID: user_id},
-                request_id=uuid4()
+            if group.admin_id == user_id:
+                logger.debug(f'handle_leave_group: user {user_id} is an admin of the group {group_id} and therefore cannot leave')
+                return Message(
+                    type=MessageType.ERROR,
+                    data=f'admin cannot leave the group',
+                    request_id=message.request_id
+                )
+
+            group.members.remove(user_id)
+            self.db.add_or_update_group(group)
+
+            user.group_id = None
+            self.db.add_or_update_user(user)
+
+            logger.debug(f'handle_leave_group: user {user_id} left the group {group_id}')
+            await self.ws_manager.broadcast_to_group(
+                group_id,
+                Message(
+                    type=MessageType.LEAVE_GROUP,
+                    data={FieldNames.USER_ID: user_id},
+                    request_id=uuid4()
+                )
             )
-        )
-        logger.debug(f'handle_leave_group: all the members of the group {group_id} are notified')
-        return Message(
-            type=MessageType.SUCCESS,
-            data=None,
-            request_id=message.request_id
-        )
+            logger.debug(f'handle_leave_group: all the members of the group {group_id} are notified')
+            return Message(
+                type=MessageType.SUCCESS,
+                data=None,
+                request_id=message.request_id
+            )
+        except ValueError:
+            logger.error(f'handle_leave_group: invalid UUID: {group_id}')
+            return Message(
+                type=MessageType.ERROR,
+                data=f'invalid UUID: {group_id}',
+                request_id=message.request_id
+            )
+        except Exception as e:
+            logger.error(f'handle_leave_group: unknown error: {str(e)}')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
 
     async def handle_delete_group(self, user_id: UUID, message: Message) -> Message:
         """
@@ -706,7 +758,7 @@ class MessageHandler:
             A response message with 'success' status and no data or an error message
         """
         if not (user := self.db.get_user(user_id)):
-            logger.error(f'handle_delete_group: user with id {user_id} is not found')
+            logger.error(f'handle_delete_group: user {user_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -714,7 +766,7 @@ class MessageHandler:
             )
 
         if not (group := self.db.get_group(user.group_id)):
-            logger.error(f'handle_delete_group: group with id {user.group_id} is not found')
+            logger.error(f'handle_delete_group: group {user.group_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -722,14 +774,15 @@ class MessageHandler:
             )
 
         if group.admin_id != user_id:
-            logger.debug(f'handle_delete_group: only admin can delete the group')
+            logger.debug(f'handle_delete_group: only admin can delete a group')
             return Message(
                 type=MessageType.ERROR,
-                data='only admin can delete the group',
+                data='only admin can delete a group',
                 request_id=message.request_id
             )
 
-        for member_id in group.members:
+        group.members.remove(user_id) # remove admin first
+        for member_id in group.members: # notify & update members
             await self.ws_manager.send_personal_message(
                 member_id,
                 Message(
@@ -738,8 +791,18 @@ class MessageHandler:
                     request_id=uuid4()
                 )
             )
+            if member := self.db.get_user(user_id):
+                member.group_id = None
+                self.db.add_or_update_user(member)
+                logger.debug(f'handle_delete_group: delete a member with id {member_id}')
+            else:
+                logger.error(f'handle_delete_group: member {member_id} of a group {group.id} is not found')
+
+        user.group_id = None
+        self.db.add_or_update_user(user)
         self.db.delete_group(group.id)
-        logger.debug(f'handle_delete_group: the group with id {group.id} has been deleted successfully')
+
+        logger.debug(f'handle_delete_group: the group with id {group.id} has been deleted successfully. All the members are notified')
 
         return Message(
             type=MessageType.SUCCESS,
