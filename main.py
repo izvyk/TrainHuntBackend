@@ -692,7 +692,6 @@ class MessageHandler:
                 request_id=message.request_id
             )
         try:
-            group_id = UUID(group_id)
             if not (group := self.db.get_group(group_id)):
                 logger.error(f'handle_leave_group: no group with id {group_id} is found')
                 return Message(
@@ -728,13 +727,6 @@ class MessageHandler:
             return Message(
                 type=MessageType.SUCCESS,
                 data=None,
-                request_id=message.request_id
-            )
-        except ValueError:
-            logger.error(f'handle_leave_group: invalid UUID: {group_id}')
-            return Message(
-                type=MessageType.ERROR,
-                data=f'invalid UUID: {group_id}',
                 request_id=message.request_id
             )
         except Exception as e:
