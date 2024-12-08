@@ -5,16 +5,17 @@ import os
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
-from uuid import UUID as UUID_non_serializable
+from uuid import UUID as UUID_NON_SERIALIZABLE
 import json
 from enum import Enum, StrEnum
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Dict, Any
 import json_fix as _ # for json.dumps() to work on custom classes with __json__ method
 import uvicorn # for debugging
 
 
-class UUID(UUID_non_serializable):
+class UUID(UUID_NON_SERIALIZABLE):
+    """Serializable UUID"""
     def __json__(self):
         return str(self)
 
@@ -25,6 +26,9 @@ def uuid4():
 
 
 class MessageType(Enum):
+    """
+    This enum is an agreement between the server and a client on possible message types.
+    """
     # User related
     GET_USER_INFO = 'get_user_info'
     SET_USER_INFO = 'set_user_info'
@@ -48,6 +52,9 @@ class MessageType(Enum):
 
 
 class FieldNames(StrEnum):
+    """
+    This enum is an agreement between the server and a client on possible json-message keys.
+    """
     MESSAGE_REQUEST_ID = 'requestId'
     MESSAGE_TYPE = 'type'
     MESSAGE_DATA = 'data'
@@ -65,6 +72,9 @@ class FieldNames(StrEnum):
 
 @dataclass
 class User:
+    """
+    A dataclass representing a user
+    """
     id: UUID
     name: str = field(compare=False)
     image: str = field(compare=False)
@@ -79,7 +89,6 @@ class User:
             FieldNames.USER_GROUP_ID: self.group_id,
         }
 
-# TODO group_id
     @classmethod
     def from_dict(cls, data: dict) -> User:
         # return cls(**data)
@@ -99,6 +108,9 @@ class User:
 
 @dataclass
 class Group:
+    """
+    A dataclass representing a group
+    """
     id: UUID
     admin_id: UUID = field(compare=False)
     name: str = field(compare=False)
@@ -125,6 +137,9 @@ class Group:
 
 @dataclass
 class Message:
+    """
+    A dataclass representing a message
+    """
     type: MessageType
     data: Any
     request_id: UUID = field(default_factory=uuid4)
@@ -155,6 +170,9 @@ class Message:
 
 # TODO exceptions
 class DB:
+    """
+    This class encapsulates database operations
+    """
     def __init__(self):
         self.__users = dict()
         self.__groups = dict()
@@ -179,6 +197,7 @@ class DB:
             logger.debug(f'DB: get_group: group with id {group_id} is not found')
         return group
 
+    # TODO remove logic from this class
     def join_group(self, group_id: UUID, user_id: UUID):
         logger.debug(f'DB: join_group with group_id {group_id} and user_id {user_id}')
         user = self.__users.get(user_id)
@@ -227,21 +246,36 @@ class DB:
 
 
 class WebSocketManager:
+    """
+    This class encapsulates websocket operations
+    """
     def __init__(self, db: DB):
         self.__connections: Dict[UUID, WebSocket] = dict()
         self.db = db
 
     async def connect(self, ws: WebSocket) -> UUID:
+        """
+        Accept a connection and return its user's id
+        Args:
+            ws: websocket object
+
+        Returns:
+            user_id: UUID
+        """
         await ws.accept()
         user_id = uuid4()
         self.__connections[user_id] = ws
         return user_id
 
     async def disconnect(self, user_id: UUID):
+        """
+        Handle disconnection and notify all the other clients interested
+        Args:
+            user_id: UUID of the user to disconnect
+        """
         if user_id in self.__connections:
             del self.__connections[user_id]
             user = self.db.get_user(user_id)
-            # TODO user deletion?
             if user and user.group_id:
                 await self.broadcast_to_group(
                     user.group_id,
@@ -257,6 +291,12 @@ class WebSocketManager:
     # TODO reconnect
 
     async def send_personal_message(self, user_id: UUID, message: Message):
+        """
+        Send a personal message to the user identified by user_id
+        Args:
+            user_id: addressee's id
+            message: message to send
+        """
         if not message:
             logger.warning(f'send_personal_message: message is None')
         if user_id in self.__connections:
@@ -264,17 +304,38 @@ class WebSocketManager:
 
     # TODO overload for group:Group
     async def broadcast_to_group(self, group_id: UUID, message: Message):
+        """
+        Send a message to all members of the group identified by group_id
+        Args:
+            group_id: target group's id
+            message: message to send
+
+        Returns:
+
+        """
         if group := self.db.get_group(group_id):
             for member_id in group.members:
                 await self.send_personal_message(member_id, message)
 
 
 class MessageHandler:
+    """
+    This class holds all the logic to handle received messages
+    """
     def __init__(self, ws_manager: WebSocketManager, db: DB):
         self.ws_manager = ws_manager
         self.db = db
 
     async def handle_message(self, user_id: UUID, message: Message) -> Message:
+        """
+        This method decides which handler to use
+        Args:
+            user_id: message sender's id
+            message: message to handle
+
+        Returns:
+            A response message
+        """
         try:
             message_type = MessageType(message.type)
             
@@ -311,6 +372,15 @@ class MessageHandler:
             )
 
     async def handle_get_user_info(self, user_id: UUID, message: Message) -> Message:
+        """
+        This method handles user info request
+        Args:
+            user_id: message sender's id
+            message: message to handle
+
+        Returns:
+            A response message with user info or an error message
+        """
         try:
             if not (requested_user_id := message.data.get(FieldNames.USER_ID)):
                 logger.warning(f'handle_get_user_info: message has no {FieldNames.USER_ID}')
@@ -349,7 +419,15 @@ class MessageHandler:
             )
 
     async def handle_set_user_info(self, user_id: UUID, message: Message) -> Message:
-        # TODO notify group members?
+        """
+        This method handles user info request
+        Args:
+            user_id: message sender's id
+            message: message to handle
+
+        Returns:
+            A response message with user info or an error message
+        """
         try:
             message.data = message.data | {
                 FieldNames.USER_ID: user_id.hex,
@@ -367,6 +445,17 @@ class MessageHandler:
             self.db.add_or_update_user(user=new_user)
 
             logger.debug(f'handle_set_user_info: success')
+            if old_user and (group := self.db.get_group(old_user.group_id)):
+                await self.ws_manager.broadcast_to_group(
+                    group.id,
+                    Message(
+                        type=MessageType.SET_USER_INFO,
+                        data=new_user.to_dict(),
+                        request_id=uuid4()
+                    )
+                )
+                logger.debug(f'handle_set_user_info: all the members of the group {group.id} are notified')
+
             return Message(
                 type=MessageType.SUCCESS,
                 data={
@@ -384,6 +473,15 @@ class MessageHandler:
             )
 
     async def handle_get_group_info(self, user_id: UUID, message: Message) -> Message:
+        """
+        This method handles group info request.
+        Args:
+            user_id: message sender's id. NOT USED.
+            message: message to handle
+
+        Returns:
+            A response message with group info or an error message
+        """
         try:
             if not (group_id := message.data.get(FieldNames.GROUP_ID)):
                 logger.warning(f'handle_get_group_info: message has no {FieldNames.GROUP_ID}')
@@ -421,8 +519,19 @@ class MessageHandler:
                 request_id=message.request_id
             )
 
-###########################################################################################################
     async def handle_set_group_info(self, user_id: UUID, message: Message) -> Message:
+        """
+        This method handles group update/creation request.
+        Args:
+            user_id: message sender's id
+            message: message to handle. Must have group info
+
+        Returns:
+            One of:
+            - A response message with no data and 'success' status in case the group is updated
+            - A response message with group info and 'success' status in case the group is created
+            - An error message
+        """
         try:
             if not (user := self.db.get_user(user_id)):
                 logger.error(f'handle_set_group_info: user with id {user_id} is not found')
@@ -450,8 +559,18 @@ class MessageHandler:
 
                 group.update_from_dict(message.data)
                 self.db.add_or_update_group(group)
-
                 logger.debug(f'handle_set_group_info: group info updated by the admin')
+
+                await self.ws_manager.broadcast_to_group(
+                    group.id,
+                    Message(
+                        type=MessageType.SET_GROUP_INFO,
+                        data=group.to_dict(),
+                        request_id=uuid4()
+                    )
+                )
+                logger.debug(f'handle_set_group_info: all the members of the group {group.id} are notified')
+
                 return Message(
                     type=MessageType.SUCCESS,
                     data=None,
@@ -482,6 +601,15 @@ class MessageHandler:
             )
 
     async def handle_join_group(self, user_id: UUID, message: Message) -> Message:
+        """
+        This method handles a join group request.
+        Args:
+            user_id: message sender's id. This user joins the group
+            message: message to handle. Must have group id
+
+        Returns:
+            A response message with 'success' status and no data or an error message
+        """
         if not (group_id := message.data.get(FieldNames.GROUP_ID)):
             logger.debug(f'handle_join_group: {FieldNames.GROUP_ID} is missing')
             return Message(
@@ -525,6 +653,15 @@ class MessageHandler:
             )
 
     async def handle_leave_group(self, user_id: UUID, message: Message) -> Message:
+        """
+        This method handles a leave group request.
+        Args:
+            user_id: message sender's id. This user leaves the group
+            message: message to handle. Must have group id
+
+        Returns:
+            A response message with 'success' status and no data or an error message
+        """
         if not (user := self.db.get_user(user_id)):
             logger.error(f'handle_leave_group: user with id {user_id} is not found')
             return Message(
@@ -559,6 +696,15 @@ class MessageHandler:
         )
 
     async def handle_delete_group(self, user_id: UUID, message: Message) -> Message:
+        """
+        This method handles a delete group request.
+        Args:
+            user_id: message sender's id
+            message: message to handle. Must have group id
+
+        Returns:
+            A response message with 'success' status and no data or an error message
+        """
         if not (user := self.db.get_user(user_id)):
             logger.error(f'handle_delete_group: user with id {user_id} is not found')
             return Message(
@@ -629,12 +775,11 @@ async def websocket_endpoint(ws: WebSocket):
     user_id = await ws_manager.connect(ws)
     try:
         while True:
+            text = await ws.receive_text()
+            logger.debug(f'Received a message from the user with id {user_id}:')
+            log_message(logger.debug, text)
+
             try:
-                text = await ws.receive_text()
-
-                logger.debug(f'Received a message from the user with id {user_id}:')
-                log_message(logger.debug, text)
-
                 message = Message.from_dict(json.loads(text))
                 response = await message_handler.handle_message(user_id, message)
 
