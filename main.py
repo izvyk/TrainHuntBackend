@@ -756,10 +756,10 @@ class MessageHandler:
             )
 
         if not (group := self.db.get_group(user.group_id)):
-            logger.error(f'handle_delete_group: group {user.group_id} is not found')
+            logger.debug(f'handle_delete_group: group {user.group_id} is not found')
             return Message(
                 type=MessageType.ERROR,
-                data='internal error',
+                data='group is not found',
                 request_id=message.request_id
             )
 
@@ -777,11 +777,11 @@ class MessageHandler:
                 member_id,
                 Message(
                     type=MessageType.DELETE_GROUP,
-                    data='group is deleted',
+                    data=None,
                     request_id=uuid4()
                 )
             )
-            if member := self.db.get_user(user_id):
+            if member := self.db.get_user(member_id):
                 member.group_id = None
                 self.db.add_or_update_user(member)
                 logger.debug(f'handle_delete_group: delete a member with id {member_id}')
