@@ -27,7 +27,7 @@
             pre {
                 margin: 0;
             }
-            form button {
+            button {
                 height: 2em;
                 border-radius: 0;
                 border: 1px solid black;
@@ -38,6 +38,7 @@
                 border: 1px solid black;
                 padding: 5px;
                 resize: none;
+                width: 100%;
             }
             form textarea:focus-visible {
                 outline: none;
@@ -57,43 +58,75 @@
     </head>
     <body>
         <main class="row fullheight">
-            <form class="column" action="" onsubmit="sendMessage(event)">
-                <textarea id="messageText" autocomplete="off"></textarea>
-                <button>Send</button>
-            </form>
+            <div class="column">
+                <form action="">
+                    <textarea id="messageText" autocomplete="off"></textarea>
+                </form>
+                <button id="formButton" onclick="sendMessage()">Connect</button>
+
+            </div>
             <div id='messages' class="column fullheight"></div>
         </main>
         <script>
-            const ws = new WebSocket('ws://localhost:8000/ws');
+            const formButton = document.getElementById('formButton');
+            let ws;
+            connect();
 
-            ws.onmessage = function(event) {
-                const messages = document.getElementById('messages');
-                const messageContainer = document.createElement('div');
-                const message = document.createElement('pre');
 
-                const scrolledToBottom = Math.abs(messages.scrollHeight - messages.scrollTop - messages.clientHeight) < 1;
+            function connect() {
+                formButton.disabled = true;
+                ws = new WebSocket('ws://localhost:8000/ws');
 
-                const content = document.createTextNode(JSON.stringify(JSON.parse(event.data), undefined, 2));
-                message.appendChild(content);
+                ws.onopen = function () {
+                    formButton.textContent = 'Send';
+                    formButton.onclick = sendMessage;
+                    formButton.disabled = false;
+                };
+                ws.onmessage = function(event) {
+                    const messages = document.getElementById('messages');
+                    const messageContainer = document.createElement('div');
+                    const message = document.createElement('pre');
 
-                messageContainer.appendChild(message);
-                messages.appendChild(messageContainer);
+                    const scrolledToBottom = Math.abs(messages.scrollHeight - messages.scrollTop - messages.clientHeight) < 1;
 
-                if (scrolledToBottom) {
-                    messages.scroll({ top: messages.scrollHeight, behavior: 'smooth' });
-                }
-            };
-            function sendMessage(event) {
+                    const content = document.createTextNode(JSON.stringify(JSON.parse(event.data), undefined, 2));
+                    message.appendChild(content);
+
+                    messageContainer.appendChild(message);
+                    messages.appendChild(messageContainer);
+
+                    if (scrolledToBottom) {
+                        messages.scroll({ top: messages.scrollHeight, behavior: 'smooth' });
+                    }
+                };
+
+                ws.onclose = function (e) {
+                    // console.log('Socket is closed. Reconnect will be attempted in 1 second.', e.reason);
+                    // setTimeout(function () {
+                    //     connect();
+                    // }, 1000);
+                    formButton.textContent = 'Connect';
+
+                    formButton.onclick = connect;
+                };
+
+                ws.onerror = function (err) {
+                    formButton.disabled = false;
+                    err.preventDefault();
+                };
+            }
+
+
+            function sendMessage() {
                 const input = document.getElementById('messageText');
                 if (input.value) {
                     ws.send(input.value);
                 }
-                event.preventDefault();
             }
 
             document.body.addEventListener('keydown', (event) => {
                 if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                    sendMessage(event);
+                    sendMessage();
                 }
             });
         </script>
