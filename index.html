@@ -3,6 +3,10 @@
     <head>
         <title>TrainHunt backend test</title>
         <style>
+            .background {
+                background-color: #FDFAEE;
+            }
+
             html, body, .fullheight {
                 height: 100%;
             }
@@ -11,6 +15,7 @@
                 padding: 10px;
                 box-sizing: border-box;
                 font-family: monospace;
+                color: #37485B;
             }
             .row {
                 display: flex;
@@ -18,50 +23,87 @@
                 flex-wrap: wrap;
                 width: 100%;
                 align-items: start;
+                gap: 10px;
             }
             .column {
-                display: flex;
                 flex-direction: column;
                 flex: 1;
+            }
+            .formContainer {
+                display: flex;
+                gap: 10px;
             }
             pre {
                 margin: 0;
             }
             button {
-                height: 2em;
-                border-radius: 0;
-                border: 1px solid black;
+                height: 2.5rem;
+                border-radius: 6px;
+                /*border: 1px solid #172E3E;*/
+                border: none;
+                background-color: #F1694E;
+                color: white;
+                font-size: 20px;
+                font-weight: bolder;
+                font-family: monospace;
             }
-            form textarea {
-                height: calc(100vh - 2 * 10px - 2em);
+            button:disabled {
+                background-color: #FCE1DC;
+            }
+            textarea {
+                height: calc(100vh - 2 * 10px - 2.5rem - 10px);
                 box-sizing: border-box;
-                border: 1px solid black;
+                border: 3px solid #D5E1E7;
                 padding: 5px;
                 resize: none;
                 width: 100%;
+                /*color: #172E3E;*/
+                color: #37485B;
+                border-radius: 6px;
+                font-size: 13px;
+                transition: border .2s;
+                font-weight: bolder;
             }
-            form textarea:focus-visible {
+            textarea:focus-visible {
                 outline: none;
-                border: 2px solid black;
+                border-color: #F1694E;
                 margin: 0;
             }
             #messages {
-                overflow-y: scroll;
+                overflow-y: auto;
                 min-width: fit-content;
+                /*font-size: 1rem;*/
+                background-color: #D5E1E7;
+                border-radius: 6px;
+                font-weight: bolder;
             }
             #messages div {
-                border: 1px solid black;
-                margin: 0 10px 10px;
+                /*border: 1px solid #172E3E;*/
+                margin: 10px 10px 10px;
                 padding: 5px;
+                background-color: white;
+                border-radius: 6px;
+            }
+
+            ::-webkit-scrollbar {
+                width: 12px;
+            }
+            ::-webkit-scrollbar-track {
+                background: transparent;
+                border-radius: 0 6px 6px 0;
+            }
+
+            ::-webkit-scrollbar-thumb {
+                background-color: #F1694E69;
+                border-radius: 6px;
+                border: transparent;
             }
         </style>
     </head>
-    <body>
+    <body class="background">
         <main class="row fullheight">
-            <div class="column">
-                <form action="">
-                    <textarea id="messageText" autocomplete="off"></textarea>
-                </form>
+            <div class="column formContainer">
+                <textarea id="messageText" autocomplete="off"></textarea>
                 <button id="formButton" onclick="sendMessage()">Connect</button>
 
             </div>
@@ -69,6 +111,7 @@
         </main>
         <script>
             const formButton = document.getElementById('formButton');
+            const messages = document.getElementById('messages');
             let ws;
             connect();
 
@@ -83,7 +126,7 @@
                     formButton.disabled = false;
                 };
                 ws.onmessage = function(event) {
-                    const messages = document.getElementById('messages');
+                    // const messages = document.getElementById('messages');
                     const messageContainer = document.createElement('div');
                     const message = document.createElement('pre');
 
@@ -123,6 +166,23 @@
                     ws.send(input.value);
                 }
             }
+
+            // function setMessagesBorder() {
+            //     if (Math.abs(messages.scrollHeight - messages.scrollTop - messages.clientHeight) < 1) {
+            //         messages.style.borderBottom = "3px solid #F1694E";
+            //     }
+            //     else {
+            //         messages.style.borderBottom = "0";
+            //     }
+            // }
+            //
+            // document.getElementById("messages").addEventListener('scroll', (event) => {
+            //     setMessagesBorder();
+            // });
+            //
+            // document.getElementById("messages").addEventListener('scrollend', (event) => {
+            //     setMessagesBorder();
+            // });
 
             document.body.addEventListener('keydown', (event) => {
                 if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
