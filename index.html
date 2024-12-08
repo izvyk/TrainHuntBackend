@@ -3,8 +3,13 @@
     <head>
         <title>TrainHunt backend test</title>
         <style>
+            html, body, .fullheight {
+                height: 100%;
+            }
             body {
-                margin: 10px;
+                margin: 0;
+                padding: 10px;
+                box-sizing: border-box;
                 font-family: monospace;
             }
             .row {
@@ -17,15 +22,10 @@
             .column {
                 display: flex;
                 flex-direction: column;
-                flex-basis: 100%;
                 flex: 1;
             }
             pre {
                 margin: 0;
-            }
-            form {
-                top: 10px;
-                position: sticky;
             }
             form button {
                 height: 2em;
@@ -39,6 +39,15 @@
                 padding: 5px;
                 resize: none;
             }
+            form textarea:focus-visible {
+                outline: none;
+                border: 2px solid black;
+                margin: 0;
+            }
+            #messages {
+                overflow-y: scroll;
+                min-width: fit-content;
+            }
             #messages div {
                 border: 1px solid black;
                 margin: 0 10px 10px;
@@ -47,29 +56,38 @@
         </style>
     </head>
     <body>
-        <main class="row">
+        <main class="row fullheight">
             <form class="column" action="" onsubmit="sendMessage(event)">
                 <textarea id="messageText" autocomplete="off"></textarea>
                 <button>Send</button>
             </form>
-            <div id='messages' class="column"></div>
+            <div id='messages' class="column fullheight"></div>
         </main>
         <script>
             const ws = new WebSocket('ws://localhost:8000/ws');
+
             ws.onmessage = function(event) {
                 const messages = document.getElementById('messages');
                 const messageContainer = document.createElement('div');
                 const message = document.createElement('pre');
+
+                const scrolledToBottom = Math.abs(messages.scrollHeight - messages.scrollTop - messages.clientHeight) < 1;
 
                 const content = document.createTextNode(JSON.stringify(JSON.parse(event.data), undefined, 2));
                 message.appendChild(content);
 
                 messageContainer.appendChild(message);
                 messages.appendChild(messageContainer);
+
+                if (scrolledToBottom) {
+                    messages.scroll({ top: messages.scrollHeight, behavior: 'smooth' });
+                }
             };
             function sendMessage(event) {
                 const input = document.getElementById('messageText');
-                ws.send(input.value);
+                if (input.value) {
+                    ws.send(input.value);
+                }
                 event.preventDefault();
             }
 
