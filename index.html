@@ -3,10 +3,6 @@
     <head>
         <title>TrainHunt backend test</title>
         <style>
-            .background {
-                background-color: #FDFAEE;
-            }
-
             html, body, .fullheight {
                 height: 100%;
             }
@@ -16,6 +12,7 @@
                 box-sizing: border-box;
                 font-family: monospace;
                 color: #37485B;
+                background-color: #FDFAEE;
             }
             .row {
                 display: flex;
@@ -39,7 +36,6 @@
             button {
                 height: 2.5rem;
                 border-radius: 6px;
-                /*border: 1px solid #172E3E;*/
                 border: none;
                 background-color: #F1694E;
                 color: white;
@@ -57,7 +53,6 @@
                 padding: 5px;
                 resize: none;
                 width: 100%;
-                /*color: #172E3E;*/
                 color: #37485B;
                 border-radius: 6px;
                 font-size: 13px;
@@ -72,13 +67,11 @@
             #messages {
                 overflow-y: auto;
                 min-width: fit-content;
-                /*font-size: 1rem;*/
                 background-color: #D5E1E7;
                 border-radius: 6px;
                 font-weight: bolder;
             }
             #messages div {
-                /*border: 1px solid #172E3E;*/
                 margin: 10px 10px 10px;
                 padding: 5px;
                 background-color: white;
@@ -92,7 +85,6 @@
                 background: transparent;
                 border-radius: 0 6px 6px 0;
             }
-
             ::-webkit-scrollbar-thumb {
                 background-color: #F1694E69;
                 border-radius: 6px;
@@ -100,7 +92,7 @@
             }
         </style>
     </head>
-    <body class="background">
+    <body>
         <main class="row fullheight">
             <div class="column formContainer">
                 <textarea id="messageText" autocomplete="off"></textarea>
@@ -125,8 +117,8 @@
                     formButton.onclick = sendMessage;
                     formButton.disabled = false;
                 };
+
                 ws.onmessage = function(event) {
-                    // const messages = document.getElementById('messages');
                     const messageContainer = document.createElement('div');
                     const message = document.createElement('pre');
 
@@ -159,30 +151,12 @@
                 };
             }
 
-
             function sendMessage() {
                 const input = document.getElementById('messageText');
                 if (input.value) {
                     ws.send(input.value);
                 }
             }
-
-            // function setMessagesBorder() {
-            //     if (Math.abs(messages.scrollHeight - messages.scrollTop - messages.clientHeight) < 1) {
-            //         messages.style.borderBottom = "3px solid #F1694E";
-            //     }
-            //     else {
-            //         messages.style.borderBottom = "0";
-            //     }
-            // }
-            //
-            // document.getElementById("messages").addEventListener('scroll', (event) => {
-            //     setMessagesBorder();
-            // });
-            //
-            // document.getElementById("messages").addEventListener('scrollend', (event) => {
-            //     setMessagesBorder();
-            // });
 
             document.body.addEventListener('keydown', (event) => {
                 if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
