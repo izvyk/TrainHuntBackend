@@ -890,4 +890,4 @@ async def websocket_endpoint(ws: WebSocket):
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000) # for debugging
+    uvicorn.run(app, host="::", port=8000) # for debugging

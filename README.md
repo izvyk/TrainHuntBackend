@@ -20,7 +20,7 @@
 #### • For a local development
     fastapi dev main.py
 #### • For a connection from a physical device and/or for detailed logs
-    uvicorn main:app --port 8000 --host 0.0.0.0 --reload --log-level debug
+    uvicorn main:app --port 8000 --host :: --reload --log-level debug
 
 
 ## Setup server access from outside (Windows)
@@ -28,7 +28,7 @@
 1. Do steps 2.1 - 2.4 from "Server startup" part.
 2. Start the server with the following command:
     ```
-    uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    uvicorn main:app --host :: --port 8000 --reload
     ```
 3. Open `cmd.exe`, execute the following command, and memorize the last number from the output. It is the process ID (PID).
     ```
