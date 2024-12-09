@@ -536,11 +536,10 @@ class MessageHandler:
                     data=None,
                     request_id=message.request_id
                 )
-            
-            group = Group.from_dict(message.data | {FieldNames.GROUP_ADMIN_ID: user_id.hex})
 
-            if self.db.get_group(group.id):
-                group.id = uuid4()
+            # Creating group
+
+            group = Group.from_dict(message.data | {FieldNames.GROUP_ADMIN_ID: user_id.hex})
 
             group.members.add(user_id)
             self.db.add_or_update_group(group)
@@ -550,9 +549,7 @@ class MessageHandler:
             logger.debug(f'handle_set_group_info: created a group with id {group.id}')
             return Message(
                 type=MessageType.SUCCESS,
-                data={
-                    FieldNames.GROUP_ID: group.id,
-                },
+                data=None,
                 request_id=message.request_id
             )
 
@@ -826,6 +823,11 @@ def log_message(func, text):
 @app.websocket('/ws')
 async def websocket_endpoint(ws: WebSocket):
     user_id = await ws_manager.connect(ws)
+    db.add_or_update_user(User(
+        user_id,
+        None,
+        None
+    ))
     try:
         while True:
             text = await ws.receive_text()
@@ -849,15 +851,15 @@ async def websocket_endpoint(ws: WebSocket):
                         request_id=uuid4()
                     )
                 )
-            except TypeError as e:
-                logger.warning(f'test2 Invalid message received from the user {user_id}: {e}')
+            except TypeError as e: # cannot serialize object
+                logger.warning(f'internal error. User {user_id}: {e}')
                 log_message(logger.warning, text)
 
                 await ws_manager.send_personal_message(
                     user_id,
                     Message(
                         type=MessageType.ERROR,
-                        data='invalid json format',
+                        data='internal error',
                         request_id=uuid4()
                     )
                 )
