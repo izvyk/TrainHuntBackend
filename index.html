@@ -118,7 +118,7 @@
 
             function connect() {
                 formButton.disabled = true;
-                ws = new WebSocket('ws://localhost:8000/ws');
+                ws = new WebSocket('ws://' + window.location.host + '/ws');
 
                 ws.onopen = function () {
                     formButton.textContent = 'Send';
