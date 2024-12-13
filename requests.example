@@ -53,3 +53,35 @@
     "data": null,
     "requestId": "23ce5565-719a-417c-8a3e-059c405430e0"
 }
+
+{
+    "type": "set_teams",
+    "data": [
+        {
+            "teamId": "1",
+            "teamMembers": [
+                "6dafb7ff-f96b-497c-a721-ff3ae21dded5",
+                "dff2cea7-32fb-4fa9-8ab7-e5539769e486",
+                "cad6cce2-de2c-461a-a99e-60b3856e317b",
+                "c1034d93-7b87-4fcd-9ea6-495a10744c2b"
+            ]
+        },
+        {
+            "teamId": "2",
+            "teamMembers": [
+                "2459ee73-148a-46e4-b4a5-b3fd34fefa2d",
+                "ed9b8450-fbf4-47c4-bbcd-4081498f84d3",
+                "55cd089f-d5ef-4482-b107-a42d01d38f7b",
+                "be3b457c-099c-4640-b93d-c749fb96f8bf"
+            ]
+        }
+    ],
+    "requestId": "7f9dcbac-fe90-41a7-ab10-d8b7444f5b11"
+}
+
+{
+    "type": "get_teams",
+    "data": null,
+    "requestId": "8c75e987-4282-46b4-b8e6-b00bd22c2e44"
+}
+}
