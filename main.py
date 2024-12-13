@@ -1,9 +1,8 @@
 from __future__ import annotations
 
+import copy
 import logging
 import os
-from tokenize import group
-
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from uuid import UUID as UUID_NON_SERIALIZABLE
@@ -42,6 +41,9 @@ class MessageType(Enum):
     GET_GROUP_INFO = 'get_group_info'
     SET_GROUP_INFO = 'set_group_info'
     # GET_GROUP_MEMBERS = 'get_group_members' # ?
+
+    SET_TEAMS = 'set_teams'
+    GET_TEAMS = 'get_teams'
     
     # System messages
     ERROR = 'error'
@@ -69,6 +71,10 @@ class FieldNames(StrEnum):
     GROUP_NAME = 'groupName'
     GROUP_MEMBERS = 'groupMembers'
     GROUP_ADMIN_ID = 'groupAdminId'
+
+    TEAM_ID = 'teamId'
+    TEAM_GROUP_ID = 'groupId'
+    TEAM_MEMBERS = 'teamMembers'
 
 
 @dataclass
@@ -143,6 +149,37 @@ class Group:
 
 
 @dataclass
+class Team:
+    """
+    A dataclass representing a team
+    """
+    id: int
+    group_id: UUID
+    members: frozenset[UUID] = field(compare=False)
+
+    # TODO check exceptions
+    @classmethod
+    def from_dict(cls, data: dict) -> Team:
+        """
+        Exceptions:
+            - KeyError: some filed is missing
+            - TypeError: UUID is None of id is an invalid int
+            - ValueError: invalid UUID
+        """
+        return cls(
+            id=int(data[FieldNames.TEAM_ID]),
+            group_id=UUID(data[FieldNames.TEAM_GROUP_ID]),
+            members=frozenset(data[FieldNames.TEAM_MEMBERS])
+        )
+
+    def __json__(self):
+        return {
+            FieldNames.TEAM_ID: self.id,
+            FieldNames.TEAM_MEMBERS: list(self.members),
+        }
+
+
+@dataclass
 class Message:
     """
     A dataclass representing a message
@@ -181,35 +218,67 @@ class DB:
     This class encapsulates database operations
     """
     def __init__(self):
-        self.__users = dict()
-        self.__groups = dict()
+        self.__users: Dict[UUID: User] = dict()
+        self.__groups: Dict[UUID: Group] = dict()
+        self.__teams: Dict[(UUID, int): Team] = dict() # TODO proper id
 
     def add_or_update_user(self, user: User):
         logger.debug(f'DB: add_or_update_user with id {user.id}')
         self.__users[user.id] = user
 
-    def get_user(self, user_id: UUID) -> User:
+    def get_user(self, user_id: UUID) -> User | None:
         logger.debug(f'DB: get_user with id {user_id}')
         if not (user := self.__users.get(user_id)):
             logger.debug(f'DB: get_user: user with id {user_id} is not found')
-        return user
+        return copy.deepcopy(user)
     
     def add_or_update_group(self, group: Group):
         logger.debug(f'DB: add_or_update_group with id {group.id}')
         self.__groups[group.id] = group
 
-    def get_group(self, group_id: UUID) -> Group:
+    def get_group(self, group_id: UUID) -> Group | None:
         logger.debug(f'DB: get_group with id {group_id}')
         if not (group := self.__groups.get(group_id)):
             logger.debug(f'DB: get_group: group with id {group_id} is not found')
-        return group
+        return copy.deepcopy(group)
 
+    # TODO also delete teams of this group
     def delete_group(self, group_id: UUID):
         logger.debug(f'DB: delete_group {group_id}')
         if group_id not in self.__groups:
             logger.error(f'DB: delete_group: group with id {group_id} is not found')
         del self.__groups[group_id]
 
+    def add_or_update_team(self, team: Team):
+        logger.debug(f'DB: add_or_update_team with id {team.id}')
+        self.__teams[(team.group_id, team.id)] = team
+
+    def get_team(self, group_id: UUID, team_id: UUID) -> Team | None:
+        logger.debug(f'DB: get_team with id {team_id}')
+        if not (team := self.__teams.get( (group_id, team_id) )):
+            logger.debug(f'DB: get_team: team with id {team_id} in group {group_id} is not found')
+        return copy.deepcopy(team)
+
+    def get_group_teams(self, group_id: UUID) -> list[Team]:
+        """
+        Exceptions:
+            ValueError: group with id <group_id> is not found
+        """
+        logger.debug(f'DB: get_group_teams with id {group_id}')
+        if group_id not in self.__groups:
+            logger.error(f'DB: get_team: group {group_id} is not found')
+            raise ValueError(f'Group {group_id} is not found')
+        teams = list()
+        for team in self.__teams.values():
+            if team.group_id == group_id:
+                teams.append(team)
+        return copy.deepcopy(teams)
+
+    def delete_team(self, group_id: UUID, team_id: int):
+        logger.debug(f'DB: delete_team {team_id}')
+        if team_id not in self.__teams:
+            logger.error(f'DB: delete_team: team with id {team_id} is not found')
+        del self.__teams[(group_id, team_id)]
 
 
 class WebSocketManager:
@@ -268,14 +337,16 @@ class WebSocketManager:
             message: message to send
         """
         if not message:
-            logger.warning(f'send_personal_message: message is None')
+            logger.error(f'send_personal_message: message is None')
             return
         if user_ws := self.__connections.get(user_id):
             await user_ws.send_json(message.to_dict())
 
     async def broadcast(self, addressees: set[UUID], message: Message):
+        logger.debug('broadcast started')
         for addressee_id in addressees:
             await self.send_personal_message(addressee_id, message)
+        logger.debug('broadcast ended')
 
 
 class MessageHandler:
@@ -307,6 +378,8 @@ class MessageHandler:
                 MessageType.JOIN_GROUP: self.handle_join_group,
                 MessageType.LEAVE_GROUP: self.handle_leave_group,
                 MessageType.DELETE_GROUP: self.handle_delete_group,
+                MessageType.GET_TEAMS: self.handle_get_teams,
+                MessageType.SET_TEAMS: self.handle_set_teams,
             }
             
             if handler := handlers.get(message_type):
@@ -790,6 +863,157 @@ class MessageHandler:
         self.db.delete_group(group.id)
 
         logger.debug(f'handle_delete_group: the group with id {group.id} has been deleted successfully. All the members are notified')
+
+        return Message(
+            type=MessageType.SUCCESS,
+            data=None,
+            request_id=message.request_id
+        )
+
+    async def handle_get_teams(self, user_id: UUID, message: Message) -> Message:
+        if not (user := self.db.get_user(user_id)):
+            logger.error(f'handle_get_teams: user {user_id} is not found')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
+        if not user.group_id:
+            logger.debug(f'handle_get_teams: user {user_id} is not a group member')
+            return Message(
+                type=MessageType.ERROR,
+                data=f'user {user_id} is not a group member',
+                request_id=message.request_id
+            )
+
+        try:
+            teams = self.db.get_group_teams(user.group_id)
+        except ValueError:
+            logger.error(f'handle_get_teams: group {user.group_id} is not found')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
+        return Message(
+            type=MessageType.SUCCESS,
+            data=teams,
+            request_id=message.request_id
+        )
+
+    async def handle_set_teams(self, user_id: UUID, message: Message) -> Message:
+        if not (user := self.db.get_user(user_id)):
+            logger.error(f'handle_set_teams: user {user_id} is not found')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
+        if not user.group_id:
+            logger.debug(f'handle_set_teams: user {user_id} is not a group member')
+            return Message(
+                type=MessageType.ERROR,
+                data=f'user {user_id} is not a group member',
+                request_id=message.request_id
+            )
+
+        if not (group := self.db.get_group(user.group_id)):
+            logger.error(f'handle_set_teams: group with id {user.group_id} is not found')
+            return Message(
+                type=MessageType.ERROR,
+                data=f'group with {FieldNames.GROUP_ID} = {user.group_id} is not found',
+                request_id=message.request_id
+            )
+
+        if group.admin_id != user_id:
+            logger.debug(f'handle_set_teams: only admin can set teams')
+            return Message(
+                type=MessageType.ERROR,
+                data='only admin can set teams',
+                request_id=message.request_id
+            )
+
+        unassigned_members: set[UUID] = group.members
+        assigned_members: set[UUID] = set()
+
+        teams: list[Team] = list()
+        for raw_team in message.data:
+            try:
+                # TODO check the case when message.data is not a list
+                if not (team_id := raw_team.get(FieldNames.TEAM_ID)):
+                    logger.warning(f'handle_set_teams: team has no {FieldNames.TEAM_ID}')
+                    return Message(
+                        type=MessageType.ERROR,
+                        data=f'{FieldNames.TEAM_ID} is missing',
+                        request_id=message.request_id
+                    )
+                team_id = int(team_id)
+                # TODO check the case when members is not a list
+                if not (members := raw_team.get(FieldNames.TEAM_MEMBERS)):
+                    logger.warning(f'handle_set_teams: {FieldNames.TEAM_MEMBERS} list is missing')
+                    return Message(
+                        type=MessageType.ERROR,
+                        data=f'{FieldNames.TEAM_MEMBERS} list is missing or empty',
+                        request_id=message.request_id
+                    )
+            except ValueError:
+                logger.warning(f'handle_set_teams: team id {FieldNames.TEAM_ID} is not an integer')
+                return Message(
+                    type=MessageType.ERROR,
+                    data=f'{FieldNames.TEAM_ID} is invalid',
+                    request_id=message.request_id
+                )
+
+            try:
+                members = list(map(UUID, members))
+            except ValueError:
+                logger.warning("handle_set_teams: member's id is invalid")
+                return Message(
+                    type=MessageType.ERROR,
+                    data="member's id is invalid",
+                    request_id=message.request_id
+                )
+
+            # TODO exceptions
+            teams.append(Team(team_id, user.group_id, frozenset(members)))
+
+            for member_id in members:
+                try:
+                    unassigned_members.remove(member_id)
+                    assigned_members.add(member_id)
+                except KeyError:
+                    logger.warning(f'handle_set_teams: member {member_id} is already in another team or does not exist')
+                    return Message(
+                        type=MessageType.ERROR,
+                        data=f'member {member_id} is already in another team or does not exist',
+                        request_id=message.request_id
+                    )
+
+        if len(unassigned_members) > 0:
+            logger.warning(f'handle_set_teams: some group members do not have a team')
+            return Message(
+                type=MessageType.ERROR,
+                data=f'some group members do not have a team',
+                request_id=message.request_id
+            )
+
+        for team in teams:
+            self.db.add_or_update_team(team)
+
+        logger.debug(f'handle_set_teams: teams updated by the admin')
+
+        await self.ws_manager.broadcast(
+            assigned_members - {user_id},
+            Message(
+                type=MessageType.SET_TEAMS,
+                data=teams,
+                request_id=uuid4()
+            )
+        )
+        logger.debug(f'handle_set_teams: all the members of the group {group.id} are notified')
 
         return Message(
             type=MessageType.SUCCESS,
