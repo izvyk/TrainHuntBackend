@@ -956,7 +956,7 @@ class MessageHandler:
                     logger.warning(f'handle_set_teams: {FieldNames.TEAM_MEMBERS} list is missing')
                     return Message(
                         type=MessageType.ERROR,
-                        data=f'{FieldNames.TEAM_MEMBERS} list is missing',
+                        data=f'{FieldNames.TEAM_MEMBERS} list is missing or empty',
                         request_id=message.request_id
                     )
             except ValueError:
@@ -988,7 +988,7 @@ class MessageHandler:
                     logger.warning(f'handle_set_teams: member {member_id} is already in another team or does not exist')
                     return Message(
                         type=MessageType.ERROR,
-                        data=f'member {member_id} is already in another team',
+                        data=f'member {member_id} is already in another team or does not exist',
                         request_id=message.request_id
                     )
 
@@ -1004,7 +1004,7 @@ class MessageHandler:
             self.db.add_or_update_team(team)
 
         logger.debug(f'handle_set_teams: teams updated by the admin')
-# TODO control users
+
         await self.ws_manager.broadcast(
             assigned_members - {user_id},
             Message(
