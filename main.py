@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -219,7 +220,7 @@ class DB:
     def __init__(self):
         self.__users: Dict[UUID: User] = dict()
         self.__groups: Dict[UUID: Group] = dict()
-        self.__teams: Dict[int: Team] = dict() # TODO proper id
+        self.__teams: Dict[(UUID, int): Team] = dict() # TODO proper id
 
     def add_or_update_user(self, user: User):
         logger.debug(f'DB: add_or_update_user with id {user.id}')
@@ -229,7 +230,7 @@ class DB:
         logger.debug(f'DB: get_user with id {user_id}')
         if not (user := self.__users.get(user_id)):
             logger.debug(f'DB: get_user: user with id {user_id} is not found')
-        return user
+        return copy.deepcopy(user)
     
     def add_or_update_group(self, group: Group):
         logger.debug(f'DB: add_or_update_group with id {group.id}')
@@ -239,7 +240,7 @@ class DB:
         logger.debug(f'DB: get_group with id {group_id}')
         if not (group := self.__groups.get(group_id)):
             logger.debug(f'DB: get_group: group with id {group_id} is not found')
-        return group
+        return copy.deepcopy(group)
 
     # TODO also delete teams of this group
     def delete_group(self, group_id: UUID):
@@ -250,13 +251,13 @@ class DB:
 
     def add_or_update_team(self, team: Team):
         logger.debug(f'DB: add_or_update_team with id {team.id}')
-        self.__teams[team.id] = team
+        self.__teams[(team.group_id, team.id)] = team
 
-    def get_team(self, team_id: UUID) -> Team | None:
+    def get_team(self, group_id: UUID, team_id: UUID) -> Team | None:
         logger.debug(f'DB: get_team with id {team_id}')
-        if not (team := self.__teams.get(team_id)):
-            logger.debug(f'DB: get_team: team with id {team_id} is not found')
-        return team
+        if not (team := self.__teams.get( (group_id, team_id) )):
+            logger.debug(f'DB: get_team: team with id {team_id} in group {group_id} is not found')
+        return copy.deepcopy(team)
 
     def get_group_teams(self, group_id: UUID) -> list[Team]:
         """
@@ -271,13 +272,13 @@ class DB:
         for team in self.__teams.values():
             if team.group_id == group_id:
                 teams.append(team)
-        return teams
+        return copy.deepcopy(teams)
 
-    def delete_team(self, team_id: UUID):
+    def delete_team(self, group_id: UUID, team_id: int):
         logger.debug(f'DB: delete_team {team_id}')
         if team_id not in self.__teams:
             logger.error(f'DB: delete_team: team with id {team_id} is not found')
-        del self.__teams[team_id]
+        del self.__teams[(group_id, team_id)]
 
 
 class WebSocketManager:
