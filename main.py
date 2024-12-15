@@ -746,39 +746,24 @@ class MessageHandler:
         Returns:
             A response message with 'success' status and no data or an error message
         """
-        if not (user := self.db.get_user(user_id)):
-            logger.error(f'handle_leave_group: user with id {user_id} is not found')
-            return Message(
-                type=MessageType.ERROR,
-                data='internal error',
-                request_id=message.request_id
-            )
-
-        if not (group_id := user.group_id):
-            logger.debug(f'handle_leave_group: user with id {user_id} is not a group member')
-            return Message(
-                type=MessageType.ERROR,
-                data='user is not a group member',
-                request_id=message.request_id
-            )
         try:
-            if not (group := self.db.get_group(group_id)):
-                logger.error(f'handle_leave_group: no group with id {group_id} is found')
+            if not (user := self.db.get_user(user_id)):
+                logger.error(f'handle_leave_group: user with id {user_id} is not found')
                 return Message(
                     type=MessageType.ERROR,
-                    data=f'no group with {FieldNames.GROUP_ID} {group_id} is found',
+                    data='internal error',
                     request_id=message.request_id
                 )
 
-            if group.admin_id == user_id:
-                if not (id_to_remove := message.data.get(FieldNames.USER_ID)):
-                    logger.debug(f'handle_leave_group: {FieldNames.USER_ID} is missing')
-                    return Message(
-                        type=MessageType.ERROR,
-                        data=f'{FieldNames.USER_ID} is missing',
-                        request_id=message.request_id
-                    )
+            if not (group_id := user.group_id):
+                logger.debug(f'handle_leave_group: user with id {user.id} is not a group member')
+                return Message(
+                    type=MessageType.ERROR,
+                    data='user is not a group member',
+                    request_id=message.request_id
+                )
 
+            if id_to_remove := message.data.get(FieldNames.USER_ID):
                 try:
                     id_to_remove = UUID(id_to_remove)
                 except ValueError:
@@ -788,55 +773,67 @@ class MessageHandler:
                         data=f'{id_to_remove} is not a valid UUID',
                         request_id=message.request_id
                     )
-
-                if id_to_remove == group.admin_id:
-                    logger.debug(f'handle_leave_group: user {user_id} is an admin of the group {group_id} and therefore cannot leave')
+                logger.debug(f'handle_leave_group: {FieldNames.USER_ID} to remove is set to {user_id}')
+                if not (user_to_remove := self.db.get_user(id_to_remove)):
+                    logger.debug(f'handle_leave_group: user with id {id_to_remove} is not found')
                     return Message(
                         type=MessageType.ERROR,
-                        data=f'admin cannot leave the group',
+                        data='user is not found',
                         request_id=message.request_id
                     )
-                try:
-                    group.members.remove(id_to_remove)
-                    self.db.add_or_update_group(group)
-                except KeyError:
-                    logger.debug(f'handle_leave_group: user {id_to_remove} is not a member of group {group_id}')
-                    return Message(
-                        type=MessageType.ERROR,
-                        data=f'{id_to_remove} is not a member of group {group_id}',
-                        request_id=message.request_id
-                    )
+            else:
+                logger.debug(f'handle_leave_group: {FieldNames.USER_ID} to remove is not provided and set to {user_id}')
+                id_to_remove = user_id
+                user_to_remove = user
 
-                logger.debug(f'handle_leave_group: user {user_id} left the group {group_id}')
-                await self.ws_manager.broadcast(
-                    group.members - {user_id},
-                    Message(
-                        type=MessageType.LEAVE_GROUP,
-                        data={FieldNames.USER_ID: user_id},
-                        request_id=uuid4()
-                    )
-                )
-                logger.debug(f'handle_leave_group: all the members of the group {group_id} are notified')
-
+            if user_to_remove.group_id != group_id:
+                logger.debug(f'handle_leave_group: user with id {user_to_remove.id} is not a member of the group {group_id}')
                 return Message(
-                    type=MessageType.SUCCESS,
-                    data=None,
+                    type=MessageType.ERROR,
+                    data='user is not a member of your group',
+                    request_id=message.request_id
+                )
+            if not (group := self.db.get_group(group_id)):
+                logger.error(f'handle_leave_group: no group with id {group_id} is found')
+                return Message(
+                    type=MessageType.ERROR,
+                    data=f'no group with {FieldNames.GROUP_ID} {group_id} is found',
+                    request_id=message.request_id
+                )
+            if id_to_remove != user_id and group.admin_id != user_id:
+                logger.debug(f'handle_leave_group: user {user_id} tried to kick out {id_to_remove}. Operation denied due to lack of permissions')
+                return Message(
+                    type=MessageType.ERROR,
+                    data='operation not permitted',
+                    request_id=message.request_id
+                )
+            if id_to_remove == group.admin_id:
+                logger.debug(f'handle_leave_group: user {id_to_remove} is an admin of the group {group_id} and therefore cannot leave')
+                return Message(
+                    type=MessageType.ERROR,
+                    data=f'admin cannot leave the group',
+                    request_id=message.request_id
+                )
+            try:
+                group.members.remove(id_to_remove)
+                self.db.add_or_update_group(group)
+            except KeyError:
+                logger.debug(f'handle_leave_group: user {id_to_remove} is not a member of group {group_id}')
+                return Message(
+                    type=MessageType.ERROR,
+                    data=f'{id_to_remove} is not a member of group {group_id}',
                     request_id=message.request_id
                 )
 
+            user_to_remove.group_id = None
+            self.db.add_or_update_user(user_to_remove)
 
-            group.members.remove(user_id)
-            self.db.add_or_update_group(group)
-
-            user.group_id = None
-            self.db.add_or_update_user(user)
-
-            logger.debug(f'handle_leave_group: user {user_id} left the group {group_id}')
+            logger.debug(f'handle_leave_group: user {user_to_remove} left the group {group_id}')
             await self.ws_manager.broadcast(
-                group.members,
+                group.members - {id_to_remove if id_to_remove == user_id else user_id},
                 Message(
                     type=MessageType.LEAVE_GROUP,
-                    data={FieldNames.USER_ID: user_id},
+                    data={FieldNames.USER_ID: id_to_remove},
                     request_id=uuid4()
                 )
             )
