@@ -83,8 +83,8 @@ class User:
     A dataclass representing a user
     """
     id: UUID
-    name: str = field(compare=False)
-    image: str = field(compare=False)
+    name: str | None = field(compare=False)
+    image: str | None = field(compare=False)
     group_id: UUID | None = field(compare=False, default=None)
 
 # TODO UUID control
