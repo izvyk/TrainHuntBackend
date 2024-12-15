@@ -387,7 +387,7 @@ class MessageHandler:
 
                 return await handler(user_id, message)
 
-            logger.warning(f'handle_message: no sutable handler for {message_type} is found')
+            logger.error(f'handle_message: no sutable handler for {message_type} is found')
 
             return Message(
                 type=MessageType.ERROR,
@@ -397,10 +397,10 @@ class MessageHandler:
         
         # TODO specify Exception
         except Exception as e:
-            logger.warning(f'Unknown error: {e}')
+            logger.warning(f'handle_message: unknown error: {e}')
             return Message(
                 type=MessageType.ERROR,
-                data=str(e),
+                data='internal error',
                 request_id=message.request_id
             )
 
