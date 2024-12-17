@@ -32,6 +32,7 @@ class MessageType(Enum):
     # User related
     GET_USER_INFO = 'get_user_info'
     SET_USER_INFO = 'set_user_info'
+    SET_USER_READY = 'set_user_ready'
     
     # Group related
     # CREATE_GROUP = 'create_group' # = set_group_info
@@ -44,6 +45,8 @@ class MessageType(Enum):
 
     SET_TEAMS = 'set_teams'
     GET_TEAMS = 'get_teams'
+
+    # START_GAME = 'start_game'
     
     # System messages
     ERROR = 'error'
@@ -66,6 +69,7 @@ class FieldNames(StrEnum):
     USER_NAME = 'userName'
     USER_IMAGE = 'picture'
     USER_GROUP_ID = 'groupId'
+    USER_IS_READY = 'isReady'
 
     GROUP_ID = 'groupId'
     GROUP_NAME = 'groupName'
@@ -73,8 +77,9 @@ class FieldNames(StrEnum):
     GROUP_ADMIN_ID = 'groupAdminId'
 
     TEAM_ID = 'teamId'
-    TEAM_GROUP_ID = 'groupId'
+    TEAM_GROUP_ID = 'teamGroupId'
     TEAM_MEMBERS = 'teamMembers'
+    TEAM_IS_READY = 'teamIsReady'
 
 
 @dataclass
@@ -86,6 +91,7 @@ class User:
     name: str | None = field(compare=False)
     image: str | None = field(compare=False)
     group_id: UUID | None = field(compare=False, default=None)
+    is_ready: bool = field(init=False, default=False)
 
 # TODO UUID control
     def to_dict(self) -> dict:
@@ -94,6 +100,7 @@ class User:
             FieldNames.USER_NAME: self.name,
             FieldNames.USER_IMAGE: self.image,
             FieldNames.USER_GROUP_ID: self.group_id,
+            FieldNames.USER_IS_READY: self.is_ready,
         }
 
     @classmethod
@@ -250,11 +257,11 @@ class DB:
         del self.__groups[group_id]
 
     def add_or_update_team(self, team: Team):
-        logger.debug(f'DB: add_or_update_team with id {team.id}')
+        logger.debug(f'DB: add_or_update_team with id ({team.group_id}, {team.id})')
         self.__teams[(team.group_id, team.id)] = team
 
-    def get_team(self, group_id: UUID, team_id: UUID) -> Team | None:
-        logger.debug(f'DB: get_team with id {team_id}')
+    def get_team(self, group_id: UUID, team_id: int) -> Team | None:
+        logger.debug(f'DB: get_team with id ({group_id}, {team_id})')
         if not (team := self.__teams.get( (group_id, team_id) )):
             logger.debug(f'DB: get_team: team with id {team_id} in group {group_id} is not found')
         return copy.deepcopy(team)
@@ -275,10 +282,24 @@ class DB:
         return copy.deepcopy(teams)
 
     def delete_team(self, group_id: UUID, team_id: int):
-        logger.debug(f'DB: delete_team {team_id}')
-        if team_id not in self.__teams:
-            logger.error(f'DB: delete_team: team with id {team_id} is not found')
+        logger.debug(f'DB: delete_team ({group_id}, {team_id})')
+        if (group_id, team_id) not in self.__teams:
+            logger.error(f'DB: delete_team: team with id ({group_id}, {team_id}) is not found')
+            return
         del self.__teams[(group_id, team_id)]
+
+    def get_team_members(self, group_id: UUID, team_id: int) -> list[User] | None:
+        logger.debug(f'DB: get_team_members with id ({group_id}, {team_id})')
+        if not (team := self.__teams.get((group_id, team_id))):
+            logger.error(f'DB: get_team_members: team with id ({group_id}, {team_id}) is not found')
+            return None
+        members = list(filter(lambda user: user.id in team.members, self.__users))
+
+        if len(members) != len(team.members):
+            logger.error(f'DB: get_team_members: team with id ({group_id}, {team_id}) has non-existent members')
+            return None
+
+        return copy.deepcopy(members)
 
 
 class WebSocketManager:
@@ -373,6 +394,7 @@ class MessageHandler:
             handlers = {
                 MessageType.GET_USER_INFO: self.handle_get_user_info,
                 MessageType.SET_USER_INFO: self.handle_set_user_info,
+                MessageType.SET_USER_READY: self.handle_set_user_ready,
                 MessageType.GET_GROUP_INFO: self.handle_get_group_info,
                 MessageType.SET_GROUP_INFO: self.handle_set_group_info,
                 MessageType.JOIN_GROUP: self.handle_join_group,
@@ -1062,6 +1084,100 @@ class MessageHandler:
         return Message(
             type=MessageType.SUCCESS,
             data=None,
+            request_id=message.request_id
+        )
+
+    async def handle_set_user_ready(self, user_id: UUID, message: Message) -> Message:
+        if not isinstance(is_ready := message.data, bool):
+            logger.warning(f'handle_set_user_ready: data is invalid')
+            return Message(
+                type=MessageType.ERROR,
+                data='data is invalid',
+                request_id=message.request_id
+            )
+
+        if not (user := self.db.get_user(user_id)):
+            logger.error(f'handle_set_user_ready: user {user_id} is not found')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
+        # if user.is_ready == is_ready:
+        #     logger.debug(f'handle_set_user_ready: old and new value of {FieldNames.USER_IS_READY} for the user {user_id} are the same')
+        #     return Message(
+        #         type=MessageType.SUCCESS,
+        #         data=f'old and new value of {FieldNames.USER_IS_READY} are the same',
+        #         request_id=message.request_id
+        #     )
+
+        if not user.group_id:
+            logger.debug(f'handle_set_user_ready: user {user_id} is not a group member')
+            return Message(
+                type=MessageType.ERROR,
+                data=f'user {user_id} is not a group member',
+                request_id=message.request_id
+            )
+
+        if not (teams := self.db.get_group_teams(user.group_id)):
+            logger.debug(f'handle_set_user_ready: group {user.group_id} has no teams')
+            return Message(
+                type=MessageType.ERROR,
+                data='group has no teams',
+                request_id=message.request_id
+            )
+
+        teams = filter(lambda team: user_id in team.members, teams)
+        if not (team := next(teams, None)):
+            logger.error(f'handle_set_user_ready: user {user_id} in group {user.group_id} is not a team member')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
+        if next(teams, False):
+            logger.error(f'handle_set_user_ready: user {user_id} in group {user.group_id} is a member of multiple teams')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
+        if user.is_ready == is_ready:
+            logger.debug(f'handle_set_user_ready: old and new value of {FieldNames.USER_IS_READY} for the user {user_id} are the same')
+        else:
+            user.is_ready = is_ready
+            self.db.add_or_update_user(user)
+
+        logger.debug(f'handle_set_user_ready: user {user_id} is {'' if is_ready else 'not '}ready')
+        members: list[User] = self.db.get_team_members(user.group_id, team.team_id)
+
+        if team_is_ready := all(member.is_ready for member in team.members):
+            members.remove(user)
+            logger.debug(f'handle_set_user_ready: all the members are ready')
+            for member in members:
+                await self.ws_manager.send_personal_message(
+                    member.id,
+                    Message(
+                        type=MessageType.SET_USER_READY,
+                        data={
+                            FieldNames.USER_ID: user_id,
+                            FieldNames.USER_IS_READY: is_ready,
+                            FieldNames.TEAM_IS_READY: team_is_ready,
+                        },
+                        request_id=uuid4()
+                    )
+                )
+            logger.debug(f'handle_set_user_ready: all the members of the team ({team.group_id}, {team.team_id}) are notified')
+
+        return Message(
+            type=MessageType.SUCCESS,
+            data={
+                FieldNames.USER_ID: user_id,
+                FieldNames.TEAM_IS_READY: team_is_ready,
+            },
             request_id=message.request_id
         )
 
