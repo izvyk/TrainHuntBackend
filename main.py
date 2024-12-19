@@ -55,6 +55,7 @@ class MessageType(Enum):
     # Connection
     CONNECT = 'connect'
     DISCONNECT = 'disconnect'
+    RECONNECT = 'reconnect'
 
 
 class FieldNames(StrEnum):
@@ -348,7 +349,42 @@ class WebSocketManager:
                 else:
                     logger.error(f'WebSocketManager: disconnect: group {user.group_id} is not found')
 
-    # TODO reconnect
+    async def reconnect(self, user_id: UUID, message: Message):
+        logger.debug(f'WebSocketManager reconnect: user {user_id}')
+        if not (target_user_id := message.data.get(FieldNames.USER_ID)):
+            logger.warning(f'WebSocketManager reconnect: {FieldNames.USER_ID} is not found')
+            await self.send_personal_message(user_id, Message(
+                type=MessageType.ERROR,
+                data=f'{FieldNames.USER_ID} is missing',
+                request_id=message.request_id
+            ))
+            return user_id
+
+        try:
+            target_user_id = UUID(target_user_id)
+        except ValueError | TypeError:
+            logger.debug(f'WebSocketManager reconnect: {FieldNames.USER_ID} {target_user_id} is invalid')
+            await self.send_personal_message(user_id, Message(
+                type=MessageType.ERROR,
+                data=f'{FieldNames.USER_ID} is invalid',
+                request_id=message.request_id
+            ))
+            return user_id
+
+        if target_user_id not in self.__connections:
+            logger.debug(f'WebSocketManager reconnect: {FieldNames.USER_ID} {user_id} is invalid')
+            await self.send_personal_message(user_id, Message(
+                type=MessageType.ERROR,
+                data=f'{FieldNames.USER_ID} is invalid',
+                request_id=message.request_id
+            ))
+            return user_id
+
+        logger.debug(f'WebSocketManager reconnect: setting user_id to {target_user_id}')
+        self.__connections[target_user_id] = self.__connections[user_id]
+        del self.__connections[user_id]
+        logger.debug(f'WebSocketManager reconnect: successfully set user_id to {target_user_id}')
+        return target_user_id
 
     async def send_personal_message(self, user_id: UUID, message: Message):
         """
@@ -1220,9 +1256,13 @@ async def websocket_endpoint(ws: WebSocket):
 
             try:
                 message = Message.from_dict(json.loads(text))
-                response = await message_handler.handle_message(user_id, message)
 
-                await ws_manager.send_personal_message(user_id, response)
+                if message.type != MessageType.RECONNECT:
+                    response = await message_handler.handle_message(user_id, message)
+                    await ws_manager.send_personal_message(user_id, response)
+                else:
+                    user_id = ws_manager.reconnect(user_id, message)
+
             except json.JSONDecodeError: # Invalid json
                 logger.warning(f'Invalid json message received from the user {user_id}: failed to decode')
                 log_message(logger.warning, text)
