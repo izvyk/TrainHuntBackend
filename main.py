@@ -41,6 +41,7 @@ class MessageType(Enum):
     LEAVE_GROUP = 'leave_group'
     GET_GROUP_INFO = 'get_group_info'
     SET_GROUP_INFO = 'set_group_info'
+    SET_GROUP_READY = 'set_group_ready'
     # GET_GROUP_MEMBERS = 'get_group_members' # ?
 
     SET_TEAMS = 'set_teams'
@@ -76,6 +77,7 @@ class FieldNames(StrEnum):
     GROUP_NAME = 'groupName'
     GROUP_MEMBERS = 'groupMembers'
     GROUP_ADMIN_ID = 'groupAdminId'
+    GROUP_IS_READY = 'isReady'
 
     TEAM_ID = 'teamId'
     TEAM_GROUP_ID = 'teamGroupId'
@@ -130,6 +132,7 @@ class Group:
     admin_id: UUID = field(compare=False)
     name: str = field(compare=False)
     members: set[UUID] = field(compare=False, init=False, default_factory=set)
+    is_ready: bool = field(init=False, default=False)
 
     def update_from_dict(self, data: dict):
         self.name = data[FieldNames.GROUP_NAME]
@@ -153,6 +156,7 @@ class Group:
             FieldNames.GROUP_ID: self.id,
             FieldNames.GROUP_NAME: self.name,
             FieldNames.GROUP_MEMBERS: self.members,
+            FieldNames.GROUP_IS_READY: self.is_ready,
         }
 
 
@@ -436,6 +440,7 @@ class MessageHandler:
                 MessageType.JOIN_GROUP: self.handle_join_group,
                 MessageType.LEAVE_GROUP: self.handle_leave_group,
                 MessageType.DELETE_GROUP: self.handle_delete_group,
+                MessageType.SET_GROUP_READY: self.handle_set_group_ready,
                 MessageType.GET_TEAMS: self.handle_get_teams,
                 MessageType.SET_TEAMS: self.handle_set_teams,
             }
@@ -1214,6 +1219,52 @@ class MessageHandler:
                 FieldNames.USER_ID: user_id,
                 FieldNames.TEAM_IS_READY: team_is_ready,
             },
+            request_id=message.request_id
+        )
+
+    async def handle_set_group_ready(self, user_id: UUID, message: Message) -> Message:
+        if not isinstance(is_ready := message.data, bool):
+            logger.warning(f'handle_set_group_ready: data is invalid')
+            return Message(
+                type=MessageType.ERROR,
+                data='data is invalid',
+                request_id=message.request_id
+            )
+        if not (user := self.db.get_user(user_id)):
+            logger.error(f'handle_set_group_ready: user with id {user_id} is not found')
+            return Message(
+                type=MessageType.ERROR,
+                data=f'internal error',
+                request_id=message.request_id
+            )
+        if not (group_id := user.group_id):
+            logger.debug(f'handle_set_group_ready: user is not a group member')
+            return Message(
+                type=MessageType.ERROR,
+                data='not a group member',
+                request_id=message.request_id
+            )
+        if not (group := self.db.get_group(group_id)):
+            logger.error(f'handle_set_group_ready: group with id {group_id} is not found')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+        if user_id != group.admin_id:
+            logger.debug(f'handle_set_group_ready: user {user_id} is an admin')
+            return Message(
+                type=MessageType.ERROR,
+                data='operation is not permitted',
+                request_id=message.request_id
+            )
+
+        group.is_ready = is_ready
+        self.db.add_or_update_group(group)
+
+        return Message(
+            type=MessageType.SUCCESS,
+            data=group.to_dict(),
             request_id=message.request_id
         )
 
