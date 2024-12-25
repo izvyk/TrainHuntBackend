@@ -1362,7 +1362,8 @@ async def websocket_endpoint(ws: WebSocket):
                         request_id=uuid4()
                     )
                 )
-    except WebSocketDisconnect:
+    except WebSocketDisconnect as e:
+        logger.debug(f"ws: {e}")
         await ws_manager.disconnect(user_id)
 
 
