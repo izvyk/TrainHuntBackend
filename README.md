@@ -41,3 +41,35 @@
 8. Paste the previously copied path to the top bar and select the approppriate .exe file (that was listed in the task manager). Click `Add`.
 9. Tick the checkbox in the `Private` column (and in the `Public` column also, if you wish). Click `OK` at the bottom.
 10. Done!
+
+## Production server
+
+1. Clone the repo
+2. Change to the repo directory
+   ```
+   cd train-hunt-backend/
+   ```
+3. Setup virtualenv
+   ```
+   python -m venv venv
+   pip install -r requirements.txt
+   ```
+4. Run a transient systemd-service
+   ```
+   systemd-run \
+      --user \
+      --unit=TrainHuntServer \
+      --property=Type=exec \
+      --property=WorkingDirectory="$(pwd)" \
+      --property=Environment="PATH=$(pwd)/venv/bin:$PATH" \
+      --property=Environment="PYTHONPATH=$(pwd)" \
+      --property=Restart=on-failure \
+      --property=RestartSec=5 \
+      --property=StartLimitIntervalSec=50 \
+      --property=StartLimitBurst=3 \
+      ./venv/bin/uvicorn main:app --host 0.0.0.0 --port 8000 --log-level info
+   ```
+5. Done! You can view the logs in real-time with this command:
+   ```
+   journalctl --user -feu TrainHuntServer.service
+   ```
