@@ -34,7 +34,7 @@ class MessageType(Enum):
     GET_USER_INFO = 'get_user_info'
     SET_USER_INFO = 'set_user_info'
     SET_USER_READY = 'set_user_ready'
-    
+
     # Group related
     # CREATE_GROUP = 'create_group' # = set_group_info
     DELETE_GROUP = 'delete_group' # != admin leaves the group
@@ -248,8 +248,8 @@ class CollectingStampsState(BaseGameState):
     State for Collecting Stamps game
     """
     questions: Dict[Question: bool]
+    game_type: GameType = field(init=False, default=GameType.COLLECTING_STAMPS)
     current_progress: int = field(init=False, default=0)
-    game_type: GameType = GameType.COLLECTING_STAMPS
 
     # def __post_init__(self):
     #     self.game_type = GameType.COLLECTING_STAMPS
@@ -340,7 +340,7 @@ class DB:
         if not (user := self.__users.get(user_id)):
             logger.debug(f'DB: get_user: user with id {user_id} is not found')
         return copy.deepcopy(user)
-    
+
     def add_or_update_group(self, group: Group):
         logger.debug(f'DB: add_or_update_group with id {group.id}')
         self.__groups[group.id] = group
@@ -539,7 +539,7 @@ class MessageHandler:
         """
         try:
             message_type = MessageType(message.type)
-            
+
             handlers = {
                 MessageType.GET_USER_INFO: self.handle_get_user_info,
                 MessageType.SET_USER_INFO: self.handle_set_user_info,
@@ -555,7 +555,7 @@ class MessageHandler:
                 MessageType.COLLECTING_STAMPS_START: self.handle_collecting_stamps_start,
                 MessageType.COLLECTING_STAMPS_PROGRESS_UPDATE: self.handle_collecting_stamps_progress_update,
             }
-            
+
             if handler := handlers.get(message_type):
                 logger.info(f'handle_message: {handler.__name__} will be used')
 
@@ -568,7 +568,7 @@ class MessageHandler:
                 data='unknown message type',
                 request_id=message.request_id
             )
-        
+
         # TODO specify Exception
         except Exception as e:
             logger.warning(f'handle_message: unknown error: {e}')
@@ -1413,6 +1413,14 @@ class MessageHandler:
                 request_id=message.request_id
             )
 
+        if not all(member.is_ready for member in team.members):
+            logger.error(f'handle_collecting_stamps_start: not all the members are ready')
+            return Message(
+                type=MessageType.ERROR,
+                data='not all the members are ready',
+                request_id=message.request_id
+            )
+
         for team_member in team.members - {user_id}:
             game_states: Dict[GameType: BaseGameState] = self.db.get_game_states(user_id) or dict()
 
@@ -1427,6 +1435,7 @@ class MessageHandler:
             new_state = CollectingStampsState(self.db.get_random_questions(COLLECTING_STAMPS_QUESTIONS_PER_PLAYER))
             game_states[GameType.COLLECTING_STAMPS] = new_state
             self.db.add_or_update_game_states(user_id, game_states)
+            logger.debug(f'handle_collecting_stamps_start: {GameType.COLLECTING_STAMPS} game started')
 
             await self.ws_manager.send_personal_message(
                 team_member,
@@ -1436,6 +1445,7 @@ class MessageHandler:
                     request_id=uuid4()
                 )
             )
+            logger.debug(f'handle_collecting_stamps_start: all the members of the team ({team.group_id}, {team.team_id}) are notified')
 
         game_states: Dict[GameType: BaseGameState] = self.db.get_game_states(user_id) or dict()
 
