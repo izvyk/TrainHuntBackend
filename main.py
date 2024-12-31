@@ -10,6 +10,7 @@ import json
 from enum import Enum, StrEnum
 from dataclasses import dataclass, field
 from typing import Dict, Any
+import random
 import json_fix as _ # for json.dumps() to work on custom classes with __json__ method
 import uvicorn # for debugging
 
@@ -47,8 +48,10 @@ class MessageType(Enum):
     SET_TEAMS = 'set_teams'
     GET_TEAMS = 'get_teams'
 
-    # START_GAME = 'start_game'
-    
+    COLLECTING_STAMPS_START = 'collecting_stamps_start'
+    COLLECTING_STAMPS_QUESTIONS = 'collect_stamps_questions'
+    COLLECTING_STAMPS_PROGRESS_UPDATE = 'collect_stamps_progress'
+
     # System messages
     ERROR = 'error'
     SUCCESS = 'success'
@@ -83,6 +86,17 @@ class FieldNames(StrEnum):
     TEAM_GROUP_ID = 'teamGroupId'
     TEAM_MEMBERS = 'teamMembers'
     TEAM_IS_READY = 'teamIsReady'
+
+    QUESTION_TEXT = 'questionText'
+    QUESTION_CORRECT_ANSWER = 'correctAnswer'
+    QUESTION_WRONG_ANSWERS = 'wrongAnswers'
+
+    GAMESTATE_GAME_TYPE = 'gameType'
+    GAMESTATE_GAME_PROGRESS = 'gameProgress'
+
+    COLLECTING_STAMPS_QUESTIONS = 'collectingStampsQuestions'
+    COLLECTING_STAMPS_PROGRESS = 'collectingStampsProgress'
+    COLLECTING_STAMPS_QUESTION_TEXT = 'collectingStampsQuestionText'
 
 
 @dataclass
@@ -191,6 +205,76 @@ class Team:
         }
 
 
+@dataclass(frozen=True)
+class Question:
+    """
+    A dataclass representing a question
+    """
+    text: str
+    correct_answer: str = field(compare=False, hash=False, default=None)
+    wrong_answers: list[str] = field(compare=False, hash=False, default=None)
+
+    def __json__(self):
+        return {
+            FieldNames.QUESTION_TEXT: self.text,
+            FieldNames.QUESTION_CORRECT_ANSWER: self.text,
+            FieldNames.QUESTION_WRONG_ANSWERS: self.wrong_answers
+        }
+
+
+class GameType(StrEnum):
+    """
+    Enum for different game types
+    """
+    COLLECTING_STAMPS = 'collectingStamps'
+
+
+@dataclass
+class BaseGameState:
+    """
+    Base class for all game states
+    """
+    game_type: GameType
+
+    def __json__(self):
+        return {
+            FieldNames.GAMESTATE_GAME_TYPE: self.game_type.name,
+        }
+
+
+@dataclass
+class CollectingStampsState(BaseGameState):
+    """
+    State for Collecting Stamps game
+    """
+    questions: Dict[Question: bool]
+    current_progress: int = field(init=False, default=0)
+    game_type: GameType = GameType.COLLECTING_STAMPS
+
+    # def __post_init__(self):
+    #     self.game_type = GameType.COLLECTING_STAMPS
+
+    def update_progress(self, question_text: str, answered_correctly: bool) -> int:
+        """
+        Update progress and return the number of completed questions
+        """
+
+        if not self.questions.get(tmp_question := Question(question_text)):
+            self.questions[tmp_question] = answered_correctly
+            self.current_progress += 1
+
+        return self.current_progress
+
+    def __json__(self):
+        base_json = super().__json__()
+        return {
+            **base_json,
+            FieldNames.COLLECTING_STAMPS_QUESTIONS: self.questions,
+            FieldNames.COLLECTING_STAMPS_PROGRESS: self.current_progress,
+        }
+
+
+
 @dataclass
 class Message:
     """
@@ -233,6 +317,19 @@ class DB:
         self.__users: Dict[UUID: User] = dict()
         self.__groups: Dict[UUID: Group] = dict()
         self.__teams: Dict[(UUID, int): Team] = dict() # TODO proper id
+        self.__questions: list[Question] = self.__init_questions()
+        self.__game_states: Dict[UUID, Dict[GameType: BaseGameState]] = dict()  # user_id -> game state
+
+    @staticmethod
+    def __init_questions() -> list[Question]:
+        # Add your predefined questions here
+        return [
+            Question("What is the capital of France?", "Paris",
+                    ["London", "Paris", "Berlin", "Madrid"]),
+            Question("What is 2+2?", "4",
+                    ["3", "4", "5", "6"]),
+            # Add more questions...
+        ]
 
     def add_or_update_user(self, user: User):
         logger.debug(f'DB: add_or_update_user with id {user.id}')
@@ -305,6 +402,18 @@ class DB:
             return None
 
         return copy.deepcopy(members)
+
+    def get_random_questions(self, count: int) -> list[Question]:
+        logger.debug(f'DB: get_random_questions with count {count}')
+        return copy.deepcopy(random.sample(self.__questions, count))
+
+    def add_or_update_game_states(self, user_id, game_states: Dict[GameType: BaseGameState]):
+        logger.debug(f'DB: add_or_update_game_states with {user_id}')
+        self.__game_states[user_id] = game_states
+
+    def get_game_states(self, user_id) -> Dict[GameType: BaseGameState] | None:
+        logger.debug(f'DB: get_game_states with {user_id}')
+        return copy.deepcopy(self.__game_states.get(user_id))
 
 
 class WebSocketManager:
@@ -443,6 +552,8 @@ class MessageHandler:
                 MessageType.SET_GROUP_READY: self.handle_set_group_ready,
                 MessageType.GET_TEAMS: self.handle_get_teams,
                 MessageType.SET_TEAMS: self.handle_set_teams,
+                MessageType.COLLECTING_STAMPS_START: self.handle_collecting_stamps_start,
+                MessageType.COLLECTING_STAMPS_PROGRESS_UPDATE: self.handle_collecting_stamps_progress_update,
             }
             
             if handler := handlers.get(message_type):
@@ -450,7 +561,7 @@ class MessageHandler:
 
                 return await handler(user_id, message)
 
-            logger.error(f'handle_message: no sutable handler for {message_type} is found')
+            logger.error(f'handle_message: no suitable handler for {message_type} is found')
 
             return Message(
                 type=MessageType.ERROR,
@@ -1171,7 +1282,7 @@ class MessageHandler:
 
         teams = filter(lambda team: user_id in team.members, teams)
         if not (team := next(teams, None)):
-            logger.error(f'handle_set_user_ready: user {user_id} in group {user.group_id} is not a team member')
+            logger.debug(f'handle_set_user_ready: user {user_id} in group {user.group_id} is not a team member')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1268,12 +1379,174 @@ class MessageHandler:
             request_id=message.request_id
         )
 
+    async def handle_collecting_stamps_start(self, user_id, message: Message) -> Message:
+        if not (user := self.db.get_user(user_id)):
+            logger.error(f'handle_collecting_stamps_start: user {user_id} is not found')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
+        if not (teams := self.db.get_group_teams(user.group_id)):
+            logger.debug(f'handle_collecting_stamps_start: group {user.group_id} has no teams')
+            return Message(
+                type=MessageType.ERROR,
+                data='group has no teams',
+                request_id=message.request_id
+            )
+
+        teams = filter(lambda team: user_id in team.members, teams)
+        if not (team := next(teams, None)):
+            logger.debug(f'handle_collecting_stamps_start: user {user_id} in group {user.group_id} is not a team member')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
+        if next(teams, False):
+            logger.error(f'handle_collecting_stamps_start: user {user_id} in group {user.group_id} is a member of multiple teams')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
+        for team_member in team.members - {user_id}:
+            game_states: Dict[GameType: BaseGameState] = self.db.get_game_states(user_id) or dict()
+
+            if GameType.COLLECTING_STAMPS in game_states.keys():
+                logger.debug(f'handle_collecting_stamps_start: user {user_id} already has a {GameType.COLLECTING_STAMPS} game state')
+                return Message(
+                    type=MessageType.ERROR,
+                    data='already played',
+                    request_id=message.request_id
+                )
+
+            new_state = CollectingStampsState(self.db.get_random_questions(COLLECTING_STAMPS_QUESTIONS_PER_PLAYER))
+            game_states[GameType.COLLECTING_STAMPS] = new_state
+            self.db.add_or_update_game_states(user_id, game_states)
+
+            await self.ws_manager.send_personal_message(
+                team_member,
+                Message(
+                    type=MessageType.COLLECTING_STAMPS_START,
+                    data=new_state.questions,
+                    request_id=uuid4()
+                )
+            )
+
+        game_states: Dict[GameType: BaseGameState] = self.db.get_game_states(user_id) or dict()
+
+        if GameType.COLLECTING_STAMPS in game_states.keys():
+            logger.debug(f'handle_collecting_stamps_start: user {user_id} already has a {GameType.COLLECTING_STAMPS} game state')
+            return Message(
+                type=MessageType.ERROR,
+                data='already played',
+                request_id=message.request_id
+            )
+
+        new_state = CollectingStampsState(self.db.get_random_questions(COLLECTING_STAMPS_QUESTIONS_PER_PLAYER))
+        game_states[GameType.COLLECTING_STAMPS] = new_state
+        self.db.add_or_update_game_states(user_id, game_states)
+
+        return Message(
+            type=MessageType.SUCCESS,
+            data=new_state.questions,
+            request_id=message.request_id
+        )
+
+    async def handle_collecting_stamps_progress_update(self, user_id, message: Message) -> Message:
+        if not isinstance(answered_correctly := message.data.get('answered_correctly'), bool):
+            logger.warning(f'handle_collecting_stamps_progress: data is invalid')
+            return Message(
+                type=MessageType.ERROR,
+                data='data is invalid',
+                request_id=message.request_id
+            )
+
+        if not (question_text := message.data.get(FieldNames.COLLECTING_STAMPS_QUESTION_TEXT)):
+            logger.debug(f'handle_collecting_stamps_progress: {FieldNames.COLLECTING_STAMPS_QUESTION_TEXT} is missing')
+            return Message(
+                type=MessageType.ERROR,
+                data=f'{FieldNames.COLLECTING_STAMPS_QUESTION_TEXT} is missing',
+                request_id=message.request_id
+            )
+
+        if not (user := self.db.get_user(user_id)):
+            logger.error(f'handle_collecting_stamps_progress: user {user_id} is not found')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
+        if not (game_states := self.db.get_game_states(user_id)):
+            logger.debug(f'handle_collecting_stamps_progress: user {user_id} has not started any games yet')
+            return Message(
+                type=MessageType.ERROR,
+                data='no started games',
+                request_id=message.request_id
+            )
+
+        if not (stamps_state := game_states.get(GameType.COLLECTING_STAMPS)):
+            logger.debug(f'handle_collecting_stamps_progress: user {user_id} has not started {GameType.COLLECTING_STAMPS} game')
+            return Message(
+                type=MessageType.ERROR,
+                data=f'{GameType.COLLECTING_STAMPS} is not started',
+                request_id=message.request_id
+            )
+
+        progress: int = stamps_state.update_progress(question_text, answered_correctly)
+
+        if not (teams := self.db.get_group_teams(user.group_id)):
+            logger.debug(f'handle_collecting_stamps_progress: group {user.group_id} has no teams')
+            return Message(
+                type=MessageType.ERROR,
+                data='group has no teams',
+                request_id=message.request_id
+            )
+
+        teams = filter(lambda team: user_id in team.members, teams)
+        if not (team := next(teams, None)):
+            logger.debug(f'handle_collecting_stamps_progress: user {user_id} in group {user.group_id} is not a team member')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
+        if next(teams, False):
+            logger.error(f'handle_collecting_stamps_progress: user {user_id} in group {user.group_id} is a member of multiple teams')
+            return Message(
+                type=MessageType.ERROR,
+                data='internal error',
+                request_id=message.request_id
+            )
+
+        await self.ws_manager.broadcast(
+            team.members - {user_id},
+            Message(
+                type=MessageType.COLLECTING_STAMPS_PROGRESS_UPDATE,
+                data=progress,
+                request_id=message.request_id
+            )
+        )
+
+        return Message(
+            type=MessageType.SUCCESS,
+            data=progress,
+            request_id=message.request_id
+        )
+
 
 app = FastAPI()
 db = DB()
 ws_manager = WebSocketManager(db)
 message_handler = MessageHandler(ws_manager, db)
 logger = logging.getLogger('uvicorn.error')
+COLLECTING_STAMPS_QUESTIONS_PER_PLAYER = 5
 
 
 @app.get('/')
