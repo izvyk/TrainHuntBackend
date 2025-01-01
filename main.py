@@ -217,7 +217,7 @@ class Question:
     def __json__(self):
         return {
             FieldNames.QUESTION_TEXT: self.text,
-            FieldNames.QUESTION_CORRECT_ANSWER: self.text,
+            FieldNames.QUESTION_CORRECT_ANSWER: self.correct_answer,
             FieldNames.QUESTION_WRONG_ANSWERS: self.wrong_answers
         }
 
@@ -324,10 +324,61 @@ class DB:
     def __init_questions() -> list[Question]:
         # Add your predefined questions here
         return [
-            Question("What is the capital of France?", "Paris",
-                    ["London", "Paris", "Berlin", "Madrid"]),
-            Question("What is 2+2?", "4",
-                    ["3", "4", "5", "6"]),
+            Question(
+                text="What is 2+2?",
+                correct_answer="4",
+                wrong_answers=["3", "4", "5", "6"]
+            ),
+            Question(
+                text="What is the capital of France?",
+                correct_answer="Paris",
+                wrong_answers=["London", "Berlin", "Madrid"]
+            ),
+            Question(
+                text="Which programming language was created by Guido van Rossum?",
+                correct_answer="Python",
+                wrong_answers=["Java", "C++", "Ruby"]
+            ),
+            Question(
+                text="What is the chemical symbol for gold?",
+                correct_answer="Au",
+                wrong_answers=["Ag", "Fe", "Cu"]
+            ),
+            Question(
+                text="In which year did World War II end?",
+                correct_answer="1945",
+                wrong_answers=["1944", "1946", "1943"]
+            ),
+            Question(
+                text="What is the largest planet in our solar system?",
+                correct_answer="Jupiter",
+                wrong_answers=["Saturn", "Mars", "Neptune"]
+            ),
+            Question(
+                text="Who painted the Mona Lisa?",
+                correct_answer="Leonardo da Vinci",
+                wrong_answers=["Michelangelo", "Raphael", "Vincent van Gogh"]
+            ),
+            Question(
+                text="What is the square root of 144?",
+                correct_answer="12",
+                wrong_answers=["10", "14", "16"]
+            ),
+            Question(
+                text="Which element has the atomic number 1?",
+                correct_answer="Hydrogen",
+                wrong_answers=["Helium", "Oxygen", "Carbon"]
+            ),
+            Question(
+                text="What is the main component of the Sun?",
+                correct_answer="Hydrogen",
+                wrong_answers=["Helium", "Nitrogen", "Oxygen"]
+            ),
+            Question(
+                text="Which continent is the largest by land area?",
+                correct_answer="Asia",
+                wrong_answers=["Africa", "North America", "Europe"]
+            )
             # Add more questions...
         ]
 
@@ -395,7 +446,7 @@ class DB:
         if not (team := self.__teams.get((group_id, team_id))):
             logger.error(f'DB: get_team_members: team with id ({group_id}, {team_id}) is not found')
             return None
-        members = list(filter(lambda user: user.id in team.members, self.__users))
+        members = list(filter(lambda user: user.id in team.members, self.__users.values()))
 
         if len(members) != len(team.members):
             logger.error(f'DB: get_team_members: team with id ({group_id}, {team_id}) has non-existent members')
@@ -1304,25 +1355,23 @@ class MessageHandler:
             self.db.add_or_update_user(user)
 
         logger.debug(f'handle_set_user_ready: user {user_id} is {'' if is_ready else 'not '}ready')
-        members: list[User] = self.db.get_team_members(user.group_id, team.team_id)
+        members: list[User] = self.db.get_team_members(user.group_id, team.id)
 
-        if team_is_ready := all(member.is_ready for member in team.members):
-            members.remove(user)
+        if team_is_ready := all(member.is_ready for member in members):
             logger.debug(f'handle_set_user_ready: all the members are ready')
-            for member in members:
-                await self.ws_manager.send_personal_message(
-                    member.id,
-                    Message(
-                        type=MessageType.SET_USER_READY,
-                        data={
-                            FieldNames.USER_ID: user_id,
-                            FieldNames.USER_IS_READY: is_ready,
-                            FieldNames.TEAM_IS_READY: team_is_ready,
-                        },
-                        request_id=uuid4()
-                    )
-                )
-            logger.debug(f'handle_set_user_ready: all the members of the team ({team.group_id}, {team.team_id}) are notified')
+        await self.ws_manager.broadcast(
+            team.members - {user_id},
+            Message(
+                type=MessageType.SET_USER_READY,
+                data={
+                    FieldNames.USER_ID: user_id,
+                    FieldNames.USER_IS_READY: is_ready,
+                    FieldNames.TEAM_IS_READY: team_is_ready,
+                },
+                request_id=uuid4()
+            )
+        )
+        logger.debug(f'handle_set_user_ready: all the members of the team ({team.group_id}, {team.id}) are notified')
 
         return Message(
             type=MessageType.SUCCESS,
@@ -1388,6 +1437,14 @@ class MessageHandler:
                 request_id=message.request_id
             )
 
+        # if not (group := self.db.get_group(user.group_id)):
+        #     logger.debug(f'handle_collecting_stamps_start: group {user.group_id} is not found')
+        #     return Message(
+        #         type=MessageType.ERROR,
+        #         data='internal error',
+        #         request_id=message.request_id
+        #     )
+
         if not (teams := self.db.get_group_teams(user.group_id)):
             logger.debug(f'handle_collecting_stamps_start: group {user.group_id} has no teams')
             return Message(
@@ -1413,7 +1470,8 @@ class MessageHandler:
                 request_id=message.request_id
             )
 
-        if not all(member.is_ready for member in team.members):
+        members: list[User] = self.db.get_team_members(user.group_id, team.id)
+        if not all(member.is_ready for member in members):
             logger.error(f'handle_collecting_stamps_start: not all the members are ready')
             return Message(
                 type=MessageType.ERROR,
@@ -1422,7 +1480,8 @@ class MessageHandler:
             )
 
         for team_member in team.members - {user_id}:
-            game_states: Dict[GameType: BaseGameState] = self.db.get_game_states(user_id) or dict()
+            logger.debug(f'handle_collecting_stamps_start: member {team_member}')
+            game_states: Dict[GameType: BaseGameState] = self.db.get_game_states(team_member) or dict()
 
             if GameType.COLLECTING_STAMPS in game_states.keys():
                 logger.debug(f'handle_collecting_stamps_start: user {user_id} already has a {GameType.COLLECTING_STAMPS} game state')
@@ -1434,8 +1493,8 @@ class MessageHandler:
 
             new_state = CollectingStampsState(self.db.get_random_questions(COLLECTING_STAMPS_QUESTIONS_PER_PLAYER))
             game_states[GameType.COLLECTING_STAMPS] = new_state
-            self.db.add_or_update_game_states(user_id, game_states)
-            logger.debug(f'handle_collecting_stamps_start: {GameType.COLLECTING_STAMPS} game started')
+            self.db.add_or_update_game_states(team_member, game_states)
+            logger.debug(f'handle_collecting_stamps_start: {GameType.COLLECTING_STAMPS} game started for the user {team_member}')
 
             await self.ws_manager.send_personal_message(
                 team_member,
@@ -1445,7 +1504,7 @@ class MessageHandler:
                     request_id=uuid4()
                 )
             )
-            logger.debug(f'handle_collecting_stamps_start: all the members of the team ({team.group_id}, {team.team_id}) are notified')
+        logger.debug(f'handle_collecting_stamps_start: all the members of the team ({team.group_id}, {team.id}) are notified')
 
         game_states: Dict[GameType: BaseGameState] = self.db.get_game_states(user_id) or dict()
 
@@ -1460,6 +1519,7 @@ class MessageHandler:
         new_state = CollectingStampsState(self.db.get_random_questions(COLLECTING_STAMPS_QUESTIONS_PER_PLAYER))
         game_states[GameType.COLLECTING_STAMPS] = new_state
         self.db.add_or_update_game_states(user_id, game_states)
+        logger.debug(f'handle_collecting_stamps_start: {GameType.COLLECTING_STAMPS} game started for the user {user_id}')
 
         return Message(
             type=MessageType.SUCCESS,
