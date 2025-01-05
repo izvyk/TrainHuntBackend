@@ -923,6 +923,14 @@ class MessageHandler:
                     request_id=message.request_id
                 )
 
+            if target_group.is_ready:
+                logger.debug(f'handle_join_group: target group {target_group.id} is ready')
+                return Message(
+                    type=MessageType.ERROR,
+                    data='target group is ready',
+                    request_id=message.request_id
+                )
+
             target_group.members.add(user_id)
             self.db.add_or_update_group(target_group)
 
@@ -1197,6 +1205,14 @@ class MessageHandler:
                 request_id=message.request_id
             )
 
+        if group.is_ready:
+            logger.debug(f'handle_set_teams: group {group.id} is ready')
+            return Message(
+                type=MessageType.ERROR,
+                data='group is ready',
+                request_id=message.request_id
+            )
+
         if group.admin_id != user_id:
             logger.debug(f'handle_set_teams: only admin can set teams')
             return Message(
@@ -1419,6 +1435,14 @@ class MessageHandler:
                 request_id=message.request_id
             )
 
+        if len(self.db.get_group_teams(group.id)) == 0:
+            logger.debug(f'handle_set_group_ready: group {group.id} has no teams')
+            return Message(
+                type=MessageType.ERROR,
+                data='group has no teams',
+                request_id=message.request_id
+            )
+
         group.is_ready = is_ready
         self.db.add_or_update_group(group)
 
@@ -1437,13 +1461,21 @@ class MessageHandler:
                 request_id=message.request_id
             )
 
-        # if not (group := self.db.get_group(user.group_id)):
-        #     logger.debug(f'handle_collecting_stamps_start: group {user.group_id} is not found')
-        #     return Message(
-        #         type=MessageType.ERROR,
-        #         data='internal error',
-        #         request_id=message.request_id
-        #     )
+        if not (group := self.db.get_group(user.group_id)):
+            logger.debug(f'handle_collecting_stamps_start: group {user.group_id} is not found')
+            return Message(
+                type=MessageType.ERROR,
+                data='not a group member',
+                request_id=message.request_id
+            )
+
+        if not group.is_ready:
+            logger.debug(f'handle_collecting_stamps_start: group {group.id} is not ready')
+            return Message(
+                type=MessageType.ERROR,
+                data='group is not ready',
+                request_id=message.request_id
+            )
 
         if not (teams := self.db.get_group_teams(user.group_id)):
             logger.debug(f'handle_collecting_stamps_start: group {user.group_id} has no teams')
