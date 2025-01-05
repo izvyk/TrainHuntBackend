@@ -325,59 +325,59 @@ class DB:
         # Add your predefined questions here
         return [
             Question(
-                text="What is 2+2?",
-                correct_answer="4",
-                wrong_answers=["3", "4", "5", "6"]
+                text='What is 2+2?',
+                correct_answer='4',
+                wrong_answers=['3', '4', '5', '6']
             ),
             Question(
-                text="What is the capital of France?",
-                correct_answer="Paris",
-                wrong_answers=["London", "Berlin", "Madrid"]
+                text='What is the capital of France?',
+                correct_answer='Paris',
+                wrong_answers=['London', 'Berlin', 'Madrid']
             ),
             Question(
-                text="Which programming language was created by Guido van Rossum?",
-                correct_answer="Python",
-                wrong_answers=["Java", "C++", "Ruby"]
+                text='Which programming language was created by Guido van Rossum?',
+                correct_answer='Python',
+                wrong_answers=['Java', 'C++', 'Ruby']
             ),
             Question(
-                text="What is the chemical symbol for gold?",
-                correct_answer="Au",
-                wrong_answers=["Ag", "Fe", "Cu"]
+                text='What is the chemical symbol for gold?',
+                correct_answer='Au',
+                wrong_answers=['Ag', 'Fe', 'Cu']
             ),
             Question(
-                text="In which year did World War II end?",
-                correct_answer="1945",
-                wrong_answers=["1944", "1946", "1943"]
+                text='In which year did World War II end?',
+                correct_answer='1945',
+                wrong_answers=['1944', '1946', '1943']
             ),
             Question(
-                text="What is the largest planet in our solar system?",
-                correct_answer="Jupiter",
-                wrong_answers=["Saturn", "Mars", "Neptune"]
+                text='What is the largest planet in our solar system?',
+                correct_answer='Jupiter',
+                wrong_answers=['Saturn', 'Mars', 'Neptune']
             ),
             Question(
-                text="Who painted the Mona Lisa?",
-                correct_answer="Leonardo da Vinci",
-                wrong_answers=["Michelangelo", "Raphael", "Vincent van Gogh"]
+                text='Who painted the Mona Lisa?',
+                correct_answer='Leonardo da Vinci',
+                wrong_answers=['Michelangelo', 'Raphael', 'Vincent van Gogh']
             ),
             Question(
-                text="What is the square root of 144?",
-                correct_answer="12",
-                wrong_answers=["10", "14", "16"]
+                text='What is the square root of 144?',
+                correct_answer='12',
+                wrong_answers=['10', '14', '16']
             ),
             Question(
-                text="Which element has the atomic number 1?",
-                correct_answer="Hydrogen",
-                wrong_answers=["Helium", "Oxygen", "Carbon"]
+                text='Which element has the atomic number 1?',
+                correct_answer='Hydrogen',
+                wrong_answers=['Helium', 'Oxygen', 'Carbon']
             ),
             Question(
-                text="What is the main component of the Sun?",
-                correct_answer="Hydrogen",
-                wrong_answers=["Helium", "Nitrogen", "Oxygen"]
+                text='What is the main component of the Sun?',
+                correct_answer='Hydrogen',
+                wrong_answers=['Helium', 'Nitrogen', 'Oxygen']
             ),
             Question(
-                text="Which continent is the largest by land area?",
-                correct_answer="Asia",
-                wrong_answers=["Africa", "North America", "Europe"]
+                text='Which continent is the largest by land area?',
+                correct_answer='Asia',
+                wrong_answers=['Africa', 'North America', 'Europe']
             )
             # Add more questions...
         ]
@@ -1706,9 +1706,9 @@ async def websocket_endpoint(ws: WebSocket):
                     )
                 )
     except WebSocketDisconnect as e:
-        logger.debug(f"ws: {e}")
+        logger.debug(f'ws: {e}')
         await ws_manager.disconnect(user_id)
 
 
-if __name__ == "__main__":
-    uvicorn.run(app, host="::", port=8000) # for debugging
+if __name__ == '__main__':
+    uvicorn.run(app, host='::', port=8000, log_level='debug') # for debugging
