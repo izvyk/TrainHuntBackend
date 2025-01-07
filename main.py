@@ -890,7 +890,7 @@ class MessageHandler:
         Returns:
             A response message with 'success' status and no data or an error message
         """
-        if not (target_group_id := message.data.get(FieldNames.GROUP_ID)):
+        if not message.data:
             logger.debug(f'handle_join_group: {FieldNames.GROUP_ID} is missing')
             return Message(
                 type=MessageType.ERROR,
@@ -898,7 +898,7 @@ class MessageHandler:
                 request_id=message.request_id
             )
         try:
-            target_group_id = UUID(target_group_id)
+            target_group_id = UUID(message.data)
             if not (target_group := self.db.get_group(target_group_id)):
                 logger.error(f'handle_join_group: no group with id {target_group_id} is found')
                 return Message(
@@ -943,7 +943,7 @@ class MessageHandler:
                 target_group.members - {user_id},
                 Message(
                     type=MessageType.JOIN_GROUP,
-                    data={FieldNames.USER_ID: user_id},
+                    data=user.to_dict(),
                     request_id=uuid4()
                 )
             )
@@ -955,7 +955,7 @@ class MessageHandler:
                 request_id=message.request_id
             )
         except ValueError:
-            logger.error(f'handle_join_group: invalid UUID: {target_group_id}')
+            logger.error(f'handle_join_group: invalid UUID: {message.data}')
             return Message(
                 type=MessageType.ERROR,
                 data=f'invalid UUID: {target_group_id}',
@@ -996,14 +996,14 @@ class MessageHandler:
                     request_id=message.request_id
                 )
 
-            if id_to_remove := message.data.get(FieldNames.USER_ID):
+            if message.data:
                 try:
-                    id_to_remove = UUID(id_to_remove)
+                    id_to_remove = UUID(message.data)
                 except ValueError:
-                    logger.debug(f'handle_leave_group: {id_to_remove} is not a valid UUID')
+                    logger.debug(f'handle_leave_group: {message.data} is not a valid UUID')
                     return Message(
                         type=MessageType.ERROR,
-                        data=f'{id_to_remove} is not a valid UUID',
+                        data=f'{message.data} is not a valid UUID',
                         request_id=message.request_id
                     )
                 logger.debug(f'handle_leave_group: {FieldNames.USER_ID} to remove is set to {user_id}')
@@ -1066,7 +1066,7 @@ class MessageHandler:
                 group.members - {id_to_remove if id_to_remove == user_id else user_id},
                 Message(
                     type=MessageType.LEAVE_GROUP,
-                    data={FieldNames.USER_ID: id_to_remove},
+                    data=id_to_remove,
                     request_id=uuid4()
                 )
             )
