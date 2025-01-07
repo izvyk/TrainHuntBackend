@@ -640,14 +640,14 @@ class MessageHandler:
             A response message with user info or an error message
         """
         try:
-            if not (requested_user_id := message.data.get(FieldNames.USER_ID)):
+            if not message.data:
                 logger.warning(f'handle_get_user_info: message has no {FieldNames.USER_ID}')
                 return Message(
                     type=MessageType.ERROR,
                     data=f'{FieldNames.USER_ID} is missing',
                     request_id=message.request_id
                 )
-            requested_user_id = UUID(requested_user_id)
+            requested_user_id = UUID(message.data)
             if user := self.db.get_user(requested_user_id):
                 return Message(
                     type=MessageType.SUCCESS,
@@ -741,14 +741,14 @@ class MessageHandler:
             A response message with group info or an error message
         """
         try:
-            if not (group_id := message.data.get(FieldNames.GROUP_ID)):
+            if not message.data:
                 logger.warning(f'handle_get_group_info: message has no {FieldNames.GROUP_ID}')
                 return Message(
                     type=MessageType.ERROR,
                     data=f'{FieldNames.GROUP_ID} is missing',
                     request_id=message.request_id
                 )
-            group_id = UUID(group_id)
+            group_id = UUID(message.data)
             if not (group := self.db.get_group(group_id)):
                 logger.warning(f'handle_get_group_info: group with id {group_id} is not found')
                 return Message(
