@@ -562,6 +562,7 @@ class WebSocketManager:
             return
         if user_ws := self.__connections.get(user_id):
             await user_ws.send_json(message.to_dict())
+            logger.debug(f'WebSocketManager: {user_id} will get: {message.to_dict()}')
 
     async def broadcast(self, addressees: set[UUID], message: Message):
         logger.debug('broadcast started')
@@ -1061,7 +1062,7 @@ class MessageHandler:
             user_to_remove.group_id = None
             self.db.add_or_update_user(user_to_remove)
 
-            logger.debug(f'handle_leave_group: user {user_to_remove} left the group {group_id}')
+            logger.debug(f'handle_leave_group: user {id_to_remove} left the group {group_id}')
             await self.ws_manager.broadcast(
                 group.members - {id_to_remove if id_to_remove == user_id else user_id},
                 Message(
