@@ -958,7 +958,7 @@ class MessageHandler:
             logger.error(f'handle_join_group: invalid UUID: {message.data}')
             return Message(
                 type=MessageType.ERROR,
-                data=f'invalid UUID: {target_group_id}',
+                data=f'invalid UUID: {message.data}',
                 request_id=message.request_id
             )
         except Exception as e:
