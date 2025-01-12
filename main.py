@@ -43,14 +43,14 @@ class MessageType(Enum):
     GET_GROUP_INFO = 'get_group_info'
     SET_GROUP_INFO = 'set_group_info'
     SET_GROUP_READY = 'set_group_ready'
-    # GET_GROUP_MEMBERS = 'get_group_members' # ?
 
     SET_TEAMS = 'set_teams'
     GET_TEAMS = 'get_teams'
 
+    # Games related
     COLLECTING_STAMPS_START = 'collecting_stamps_start'
     COLLECTING_STAMPS_QUESTIONS = 'collect_stamps_questions'
-    COLLECTING_STAMPS_PROGRESS_UPDATE = 'collect_stamps_progress'
+    COLLECTING_STAMPS_PROGRESS_UPDATE = 'collecting_stamps_progress'
 
     # System messages
     ERROR = 'error'
@@ -1063,8 +1063,9 @@ class MessageHandler:
             self.db.add_or_update_user(user_to_remove)
 
             logger.debug(f'handle_leave_group: user {id_to_remove} left the group {group_id}')
+
             await self.ws_manager.broadcast(
-                group.members - {id_to_remove if id_to_remove == user_id else user_id},
+                group.members.union({id_to_remove}) - {user_id},
                 Message(
                     type=MessageType.LEAVE_GROUP,
                     data=id_to_remove,
@@ -1447,9 +1448,20 @@ class MessageHandler:
         group.is_ready = is_ready
         self.db.add_or_update_group(group)
 
+        logger.debug(f'handle_set_group_ready: group {group_id} ready is set to {is_ready}')
+        await self.ws_manager.broadcast(
+            group.members - {user_id},
+            Message(
+                type=MessageType.SET_GROUP_READY,
+                data=is_ready,
+                request_id=uuid4()
+            )
+        )
+        logger.debug(f'handle_set_group_ready: all the members of the group {group_id} are notified')
+
         return Message(
             type=MessageType.SUCCESS,
-            data=group.to_dict(),
+            data=None,
             request_id=message.request_id
         )
 
