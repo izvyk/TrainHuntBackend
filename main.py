@@ -134,6 +134,9 @@ class User:
             group_id=group_id
         )
 
+
+    def __json__(self):
+        return self.to_dict()
     # def update_from_dict(self, data: dict):
     #     self.name = data[FieldNames.USER_NAME]
     #     self.image = data[FieldNames.USER_IMAGE]
@@ -174,6 +177,9 @@ class Group:
             FieldNames.GROUP_MEMBERS: self.members,
             FieldNames.GROUP_IS_READY: self.is_ready,
         }
+
+    def __json__(self):
+        return self.to_dict()
 
 
 @dataclass
@@ -564,7 +570,6 @@ class WebSocketManager:
             return
         if user_ws := self.__connections.get(user_id):
             await user_ws.send_json(message.to_dict())
-            self.logger.debug(f'WebSocketManager: {user_id} will get: {message.to_dict()}')
 
     async def broadcast(self, addressees: set[UUID], message: Message):
         self.logger.debug('broadcast started')
@@ -658,7 +663,7 @@ class MessageHandler:
             if user := self.db.get_user(requested_user_id):
                 return Message(
                     type=MessageType.SUCCESS,
-                    data=user.to_dict(),
+                    data=user,
                     request_id=message.request_id
                 )
             self.logger.warning(f'handle_get_user_info: user with id {user_id} is not found')
@@ -695,7 +700,7 @@ class MessageHandler:
         """
         try:
             message.data = message.data | {
-                FieldNames.USER_ID: user_id.hex,
+                FieldNames.USER_ID: str(user_id),
                 FieldNames.GROUP_ID: None,
             }
 
@@ -704,7 +709,7 @@ class MessageHandler:
             else:  # Updating the user
                 self.logger.debug(f'handle_set_user_info: updating user with id {user_id}')
                 if group_id := old_user.group_id:
-                    message.data = message.data | {FieldNames.USER_GROUP_ID: group_id.hex}
+                    message.data = message.data | {FieldNames.USER_GROUP_ID: str(group_id)}
 
             new_user = User.from_dict(message.data)
             self.db.add_or_update_user(user=new_user)
@@ -715,7 +720,7 @@ class MessageHandler:
                     group.members - {user_id},
                     Message(
                         type=MessageType.SET_USER_INFO,
-                        data=new_user.to_dict(),
+                        data=new_user,
                         request_id=uuid4()
                     )
                 )
@@ -763,9 +768,19 @@ class MessageHandler:
                     data=f'group with {FieldNames.GROUP_ID} = {group_id} is not found',
                     request_id=message.request_id
                 )
+
+            ### REMOVE LATER
+            members_data = []
+            for member_id in group.members:
+                members_data.append(self.db.get_user(member_id))
+
+            data = group.to_dict()
+            data[FieldNames.GROUP_MEMBERS] = members_data
+            ### REMOVE LATER
+
             return Message(
                 type=MessageType.SUCCESS,
-                data=group.to_dict(),
+                data=data,
                 request_id=message.request_id
             )
         except ValueError:
@@ -780,7 +795,7 @@ class MessageHandler:
             self.logger.warning(f'handle_get_group_info: unknown error: {e}')
             return Message(
                 type=MessageType.ERROR,
-                data=f'handle_get_group_info: unknown error: {e}',
+                data='internal error',
                 request_id=message.request_id
             )
 
@@ -830,7 +845,7 @@ class MessageHandler:
                     group.members - {user_id},
                     Message(
                         type=MessageType.SET_GROUP_INFO,
-                        data=group.to_dict(),
+                        data=group,
                         request_id=uuid4()
                     )
                 )
@@ -844,7 +859,7 @@ class MessageHandler:
 
             # Creating group
 
-            group = Group.from_dict(message.data | {FieldNames.GROUP_ADMIN_ID: user_id.hex})
+            group = Group.from_dict(message.data | {FieldNames.GROUP_ADMIN_ID: str(user_id)})
 
             group.members.add(user_id)
             self.db.add_or_update_group(group)
@@ -950,7 +965,7 @@ class MessageHandler:
                 target_group.members - {user_id},
                 Message(
                     type=MessageType.JOIN_GROUP,
-                    data=user.to_dict(),
+                    data=user,
                     request_id=uuid4()
                 )
             )
