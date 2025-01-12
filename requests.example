@@ -131,25 +131,25 @@
 {
     "type": "success",
     "data": {
-    "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
-    "groupName": "testgroup",
-    "groupMembers": [
-        {
-            "userId": "1a4012f5-e59b-4cc2-a321-e576b4a2af8e",
-            "userName": "BestNickname",
-            "picture": null,
-            "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
-            "isReady": false
-        },
-        {
-            "userId": "98f99d9e-b7ec-4702-8fd9-f414c4c9d1cd",
-            "userName": "Alex",
-            "picture": "test",
-            "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
-            "isReady": false
-        }
-    ],
-    "isReady": false
+        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+        "groupName": "testgroup",
+        "groupMembers": [
+            {
+                "userId": "1a4012f5-e59b-4cc2-a321-e576b4a2af8e",
+                "userName": "BestNickname",
+                "picture": null,
+                "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+                "isReady": false
+            },
+            {
+                "userId": "98f99d9e-b7ec-4702-8fd9-f414c4c9d1cd",
+                "userName": "Alex",
+                "picture": "test",
+                "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+                "isReady": false
+            }
+        ],
+        "isReady": false
     },
     "requestId": "f82f8661-352a-4d6c-a7a6-8df37d6003b2"
 }
@@ -167,9 +167,29 @@
 
 //response
 {
-  "type": "success",
-  "data": null,
-  "requestId": "50b516cc-ea18-4453-b0a6-7c6f617dd1e5"
+    "type": "success",
+    "data": {
+        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+        "groupName": "testgroup",
+        "groupMembers": [
+            {
+                "userId": "1a4012f5-e59b-4cc2-a321-e576b4a2af8e",
+                "userName": "BestNickname",
+                "picture": null,
+                "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+                "isReady": false
+            },
+            {
+                "userId": "98f99d9e-b7ec-4702-8fd9-f414c4c9d1cd",
+                "userName": "Alex",
+                "picture": "test",
+                "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+                "isReady": false
+            }
+        ],
+        "isReady": false
+    },
+    "requestId": "50b516cc-ea18-4453-b0a6-7c6f617dd1e5"
 }
 
 //notification

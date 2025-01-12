@@ -997,9 +997,18 @@ class MessageHandler:
             )
             self.logger.debug(f'handle_join_group: all the members of the group {target_group_id} are notified')
 
+            ### REMOVE LATER
+            members_data = []
+            for member_id in target_group.members:
+                members_data.append(self.db.get_user(member_id))
+
+            data = target_group.to_dict()
+            data[FieldNames.GROUP_MEMBERS] = members_data
+            ### REMOVE LATER
+
             return Message(
                 type=MessageType.SUCCESS,
-                data=None,
+                data=data,
                 request_id=message.request_id
             )
         except ValueError:
