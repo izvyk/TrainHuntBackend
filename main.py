@@ -61,7 +61,7 @@ class MessageType(Enum):
     # Connection
     CONNECT = 'connect'
     DISCONNECT = 'disconnect'
-    RECONNECT = 'reconnect'
+    SETID = 'set_id'
 
 
 class FieldNames(StrEnum):
@@ -509,7 +509,7 @@ class WebSocketManager:
             if user and user.group_id:
                 if group := self.db.get_group(user.group_id):
                     await self.broadcast(
-                        group.members,
+                        group.members - {user_id},
                         Message(
                             type=MessageType.DISCONNECT,
                             data={
@@ -521,13 +521,13 @@ class WebSocketManager:
                 else:
                     self.logger.error(f'WebSocketManager: disconnect: group {user.group_id} is not found')
 
-    async def reconnect(self, user_id: UUID, message: Message):
+    async def set_id(self, user_id: UUID, message: Message) -> UUID:
         self.logger.debug(f'WebSocketManager reconnect: user {user_id}')
-        if not (target_user_id := message.data.get(FieldNames.USER_ID)):
-            self.logger.warning(f'WebSocketManager reconnect: {FieldNames.USER_ID} is not found')
+        if not isinstance(target_user_id := message.data, str):
+            self.logger.warning(f'WebSocketManager reconnect: invalid data: {message.data}')
             await self.send_personal_message(user_id, Message(
                 type=MessageType.ERROR,
-                data=f'{FieldNames.USER_ID} is missing',
+                data='invalid data',
                 request_id=message.request_id
             ))
             return user_id
@@ -538,16 +538,7 @@ class WebSocketManager:
             self.logger.debug(f'WebSocketManager reconnect: {FieldNames.USER_ID} {target_user_id} is invalid')
             await self.send_personal_message(user_id, Message(
                 type=MessageType.ERROR,
-                data=f'{FieldNames.USER_ID} is invalid',
-                request_id=message.request_id
-            ))
-            return user_id
-
-        if target_user_id not in self.__connections:
-            self.logger.debug(f'WebSocketManager reconnect: {FieldNames.USER_ID} {user_id} is invalid')
-            await self.send_personal_message(user_id, Message(
-                type=MessageType.ERROR,
-                data=f'{FieldNames.USER_ID} is invalid',
+                data='invalid id',
                 request_id=message.request_id
             ))
             return user_id
@@ -556,6 +547,41 @@ class WebSocketManager:
         self.__connections[target_user_id] = self.__connections[user_id]
         del self.__connections[user_id]
         self.logger.debug(f'WebSocketManager reconnect: successfully set user_id to {target_user_id}')
+
+        if user := self.db.get_user(user_id):
+            if user.group_id and (group := self.db.get_group(user.group_id)):
+                await self.broadcast(
+                    group.members - {user_id, target_user_id},
+                    Message(
+                        type=MessageType.DISCONNECT,
+                        data=user_id,
+                        request_id=uuid4()
+                ))
+                self.logger.debug(f'WebSocketManager reconnect: notified group members about the disconnection')
+
+        if target_user := self.db.get_user(target_user_id):
+            if target_user.group_id and (target_group := self.db.get_group(target_user.group_id)):
+                await self.broadcast(
+                    target_group.members - {user_id, target_user_id},
+                    Message(
+                        type=MessageType.CONNECT,
+                        data=target_user_id,
+                        request_id=uuid4()
+                ))
+                self.logger.debug(f'WebSocketManager reconnect: notified group members about the connection')
+        else:
+            self.db.add_or_update_user(User(
+                target_user_id,
+                None,
+                None
+            ))
+
+        await self.send_personal_message(target_user_id, Message(
+            type=MessageType.SUCCESS,
+            data=None,
+            request_id=message.request_id
+        ))
+
         return target_user_id
 
     async def send_personal_message(self, user_id: UUID, message: Message):
@@ -1707,8 +1733,6 @@ def log_message(func, text):
 
 
 def create_app():
-    # app = FastAPI()
-    # app.state.my_state = False
     app = FastAPI()
     app.state.logger = logging.getLogger('uvicorn.error')
     app.state.db = DB(app.state.logger)
@@ -1738,11 +1762,11 @@ def create_app():
                 try:
                     message = Message.from_dict(json.loads(text))
 
-                    if message.type != MessageType.RECONNECT:
+                    if message.type != MessageType.SETID:
                         response = await app.state.message_handler.handle_message(user_id, message)
                         await app.state.ws_manager.send_personal_message(user_id, response)
                     else:
-                        user_id = app.state.ws_manager.reconnect(user_id, message)
+                        user_id = await app.state.ws_manager.set_id(user_id, message)
 
                 except json.JSONDecodeError:  # Invalid json
                     app.state.logger.warning(f'Invalid json message received from the user {user_id}: failed to decode')

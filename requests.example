@@ -1,5 +1,35 @@
 // request
 {
+    "type": "set_id",
+    "data": "1a4012f5-e59b-4cc2-a321-e576b4a2af8e",
+    "requestId": "c25c885f-8742-4d75-95aa-338248c82a60"
+}
+
+// response
+{
+    "type": "success",
+    "data": null,
+    "requestId": "c25c885f-8742-4d75-95aa-338248c82a60"
+}
+
+//notification 1
+{
+    "type": "disconnect",
+    "data": "b4df09ef-2d16-4046-b4db-c14e076356f7",
+    "requestId": "8df02873-90e5-4235-bbf8-14cb709810fb"
+}
+
+//notification 2
+{
+    "type": "connect",
+    "data": "1093ad44-c45d-4e12-96fe-08e1cb188e33",
+    "requestId": "1a3ecb9e-8264-41a1-8ea0-e70637545907"
+}
+
+///////////////
+
+// request
+{
     "type": "set_user_info",
     "data": {
         "userName": "Alex",
@@ -15,6 +45,19 @@
         "userId": "1093ad44-c45d-4e12-96fe-08e1cb188e33"
     },
     "requestId": "b324e284-b580-4dcf-9940-a66842a42291"
+}
+
+//notification
+{
+    "type": "set_user_info",
+    "data": {
+        "userId": "1a4012f5-e59b-4cc2-a321-e576b4a2af8e",
+        "userName": "Alex",
+        "picture": "test",
+        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+        "isReady": false
+    },
+    "requestId": "ef27fd78-002b-43d0-a0c9-984f2fce9a14"
 }
 
 ///////////////
@@ -39,6 +82,8 @@
     "requestId": "db390b5f-3d04-479d-ab2f-466a867cf591"
 }
 
+//no notification
+
 ///////////////
 
 //request
@@ -58,6 +103,21 @@
     "requestId": "a4bc72ce-c01c-4501-85df-453dc9e375a1"
 }
 
+//notification
+{
+    "type": "set_group_info",
+    "data": {
+        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+        "groupName": "testgroup",
+        "groupMembers": [
+            "1a4012f5-e59b-4cc2-a321-e576b4a2af8e",
+            "98f99d9e-b7ec-4702-8fd9-f414c4c9d1cd"
+        ],
+        "isReady": false
+    },
+    "requestId": "c25c885f-8742-4d75-95aa-338248c82a60"
+}
+
 ///////////////
 
 //request
@@ -71,17 +131,30 @@
 {
     "type": "success",
     "data": {
-        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
-        "groupName": "testgroup",
-        "groupMembers": [
-            "1093ad44-c45d-4e12-96fe-08e1cb188e33",
-            "a2fedb51-4664-48f9-bfe0-be6ad48ddee5",
-            "41870a7e-3adf-4c08-92f8-e5f95a3f8fa7"
-        ],
-        "isReady": false
+    "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+    "groupName": "testgroup",
+    "groupMembers": [
+        {
+            "userId": "1a4012f5-e59b-4cc2-a321-e576b4a2af8e",
+            "userName": "BestNickname",
+            "picture": null,
+            "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+            "isReady": false
+        },
+        {
+            "userId": "98f99d9e-b7ec-4702-8fd9-f414c4c9d1cd",
+            "userName": "Alex",
+            "picture": "test",
+            "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+            "isReady": false
+        }
+    ],
+    "isReady": false
     },
     "requestId": "f82f8661-352a-4d6c-a7a6-8df37d6003b2"
 }
+
+//no notification
 
 ///////////////
 
@@ -265,6 +338,7 @@
     "requestId": "8c75e987-4282-46b4-b8e6-b00bd22c2e44"
 }
 
+//no notification
 
 ///////////////
 
@@ -379,7 +453,6 @@
 ///////////////
 
 //request
-//response
 {
     "type": "collecting_stamps_progress",
     "data": {
@@ -389,4 +462,20 @@
     },
     "requestId": "<UUID>"
 }
+
+//response
+{
+    "type": "success",
+    "data": null,
+    "requestId": "<UUID>"
+}
+
+////////////////////
+
+{
+    "type": "collectingStampsCompleted",
+    "data": null,
+    "requestId": "<UUID>"
+}
+
 }
