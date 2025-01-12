@@ -11,12 +11,13 @@ from enum import Enum, StrEnum
 from dataclasses import dataclass, field
 from typing import Dict, Any
 import random
-import json_fix as _ # for json.dumps() to work on custom classes with __json__ method
-import uvicorn # for debugging
+import json_fix as _  # for json.dumps() to work on custom classes with __json__ method
+import uvicorn  # for debugging
 
 
 class UUID(UUID_NON_SERIALIZABLE):
     """Serializable UUID"""
+
     def __json__(self):
         return str(self)
 
@@ -37,12 +38,13 @@ class MessageType(Enum):
 
     # Group related
     # CREATE_GROUP = 'create_group' # = set_group_info
-    DELETE_GROUP = 'delete_group' # != admin leaves the group
+    DELETE_GROUP = 'delete_group'  # != admin leaves the group
     JOIN_GROUP = 'join_group'
     LEAVE_GROUP = 'leave_group'
     GET_GROUP_INFO = 'get_group_info'
     SET_GROUP_INFO = 'set_group_info'
     SET_GROUP_READY = 'set_group_ready'
+    # GET_GROUP_MEMBERS = 'get_group_members' # ?
 
     SET_TEAMS = 'set_teams'
     GET_TEAMS = 'get_teams'
@@ -288,17 +290,13 @@ class Message:
     def from_dict(cls, data: dict) -> Message:
         # return cls(**data)
         return cls(
-            type=data[FieldNames.MESSAGE_TYPE],
+            type=MessageType(data[FieldNames.MESSAGE_TYPE]),
             data=data[FieldNames.MESSAGE_DATA],
             request_id=UUID(data[FieldNames.MESSAGE_REQUEST_ID])
         )
 
     def __json__(self):
-        return {
-            FieldNames.MESSAGE_TYPE: self.type,
-            FieldNames.MESSAGE_DATA: self.data,
-            FieldNames.MESSAGE_REQUEST_ID: self.request_id,
-        }
+        return self.to_dict()
 
     def to_dict(self) -> dict:
         return {
@@ -313,10 +311,12 @@ class DB:
     """
     This class encapsulates database operations
     """
-    def __init__(self):
+
+    def __init__(self, logger: logging.Logger):
+        self.logger = logger
         self.__users: Dict[UUID: User] = dict()
         self.__groups: Dict[UUID: Group] = dict()
-        self.__teams: Dict[(UUID, int): Team] = dict() # TODO proper id
+        self.__teams: Dict[(UUID, int): Team] = dict()  # TODO proper id
         self.__questions: list[Question] = self.__init_questions()
         self.__game_states: Dict[UUID, Dict[GameType: BaseGameState]] = dict()  # user_id -> game state
 
@@ -383,40 +383,40 @@ class DB:
         ]
 
     def add_or_update_user(self, user: User):
-        logger.debug(f'DB: add_or_update_user with id {user.id}')
+        self.logger.debug(f'DB: add_or_update_user with id {user.id}')
         self.__users[user.id] = user
 
     def get_user(self, user_id: UUID) -> User | None:
-        logger.debug(f'DB: get_user with id {user_id}')
+        self.logger.debug(f'DB: get_user with id {user_id}')
         if not (user := self.__users.get(user_id)):
-            logger.debug(f'DB: get_user: user with id {user_id} is not found')
+            self.logger.debug(f'DB: get_user: user with id {user_id} is not found')
         return copy.deepcopy(user)
 
     def add_or_update_group(self, group: Group):
-        logger.debug(f'DB: add_or_update_group with id {group.id}')
+        self.logger.debug(f'DB: add_or_update_group with id {group.id}')
         self.__groups[group.id] = group
 
     def get_group(self, group_id: UUID) -> Group | None:
-        logger.debug(f'DB: get_group with id {group_id}')
+        self.logger.debug(f'DB: get_group with id {group_id}')
         if not (group := self.__groups.get(group_id)):
-            logger.debug(f'DB: get_group: group with id {group_id} is not found')
+            self.logger.debug(f'DB: get_group: group with id {group_id} is not found')
         return copy.deepcopy(group)
 
     # TODO also delete teams of this group
     def delete_group(self, group_id: UUID):
-        logger.debug(f'DB: delete_group {group_id}')
+        self.logger.debug(f'DB: delete_group {group_id}')
         if group_id not in self.__groups:
-            logger.error(f'DB: delete_group: group with id {group_id} is not found')
+            self.logger.error(f'DB: delete_group: group with id {group_id} is not found')
         del self.__groups[group_id]
 
     def add_or_update_team(self, team: Team):
-        logger.debug(f'DB: add_or_update_team with id ({team.group_id}, {team.id})')
+        self.logger.debug(f'DB: add_or_update_team with id ({team.group_id}, {team.id})')
         self.__teams[(team.group_id, team.id)] = team
 
     def get_team(self, group_id: UUID, team_id: int) -> Team | None:
-        logger.debug(f'DB: get_team with id ({group_id}, {team_id})')
-        if not (team := self.__teams.get( (group_id, team_id) )):
-            logger.debug(f'DB: get_team: team with id {team_id} in group {group_id} is not found')
+        self.logger.debug(f'DB: get_team with id ({group_id}, {team_id})')
+        if not (team := self.__teams.get((group_id, team_id))):
+            self.logger.debug(f'DB: get_team: team with id {team_id} in group {group_id} is not found')
         return copy.deepcopy(team)
 
     def get_group_teams(self, group_id: UUID) -> list[Team]:
@@ -424,9 +424,9 @@ class DB:
         Exceptions:
             ValueError: group with id <group_id> is not found
         """
-        logger.debug(f'DB: get_group_teams with id {group_id}')
+        self.logger.debug(f'DB: get_group_teams with id {group_id}')
         if group_id not in self.__groups:
-            logger.error(f'DB: get_team: group {group_id} is not found')
+            self.logger.error(f'DB: get_team: group {group_id} is not found')
             raise ValueError(f'Group {group_id} is not found')
         teams = list()
         for team in self.__teams.values():
@@ -435,35 +435,35 @@ class DB:
         return copy.deepcopy(teams)
 
     def delete_team(self, group_id: UUID, team_id: int):
-        logger.debug(f'DB: delete_team ({group_id}, {team_id})')
+        self.logger.debug(f'DB: delete_team ({group_id}, {team_id})')
         if (group_id, team_id) not in self.__teams:
-            logger.error(f'DB: delete_team: team with id ({group_id}, {team_id}) is not found')
+            self.logger.error(f'DB: delete_team: team with id ({group_id}, {team_id}) is not found')
             return
         del self.__teams[(group_id, team_id)]
 
     def get_team_members(self, group_id: UUID, team_id: int) -> list[User] | None:
-        logger.debug(f'DB: get_team_members with id ({group_id}, {team_id})')
+        self.logger.debug(f'DB: get_team_members with id ({group_id}, {team_id})')
         if not (team := self.__teams.get((group_id, team_id))):
-            logger.error(f'DB: get_team_members: team with id ({group_id}, {team_id}) is not found')
+            self.logger.error(f'DB: get_team_members: team with id ({group_id}, {team_id}) is not found')
             return None
         members = list(filter(lambda user: user.id in team.members, self.__users.values()))
 
         if len(members) != len(team.members):
-            logger.error(f'DB: get_team_members: team with id ({group_id}, {team_id}) has non-existent members')
+            self.logger.error(f'DB: get_team_members: team with id ({group_id}, {team_id}) has non-existent members')
             return None
 
         return copy.deepcopy(members)
 
     def get_random_questions(self, count: int) -> list[Question]:
-        logger.debug(f'DB: get_random_questions with count {count}')
+        self.logger.debug(f'DB: get_random_questions with count {count}')
         return copy.deepcopy(random.sample(self.__questions, count))
 
     def add_or_update_game_states(self, user_id, game_states: Dict[GameType: BaseGameState]):
-        logger.debug(f'DB: add_or_update_game_states with {user_id}')
+        self.logger.debug(f'DB: add_or_update_game_states with {user_id}')
         self.__game_states[user_id] = game_states
 
     def get_game_states(self, user_id) -> Dict[GameType: BaseGameState] | None:
-        logger.debug(f'DB: get_game_states with {user_id}')
+        self.logger.debug(f'DB: get_game_states with {user_id}')
         return copy.deepcopy(self.__game_states.get(user_id))
 
 
@@ -471,9 +471,11 @@ class WebSocketManager:
     """
     This class encapsulates websocket operations
     """
-    def __init__(self, db: DB):
+
+    def __init__(self, db: DB, logger: logging.Logger):
         self.__connections: Dict[UUID, WebSocket] = dict()
         self.db = db
+        self.logger = logger
 
     async def connect(self, ws: WebSocket) -> UUID:
         """
@@ -511,12 +513,12 @@ class WebSocketManager:
                         )
                     )
                 else:
-                    logger.error(f'WebSocketManager: disconnect: group {user.group_id} is not found')
+                    self.logger.error(f'WebSocketManager: disconnect: group {user.group_id} is not found')
 
     async def reconnect(self, user_id: UUID, message: Message):
-        logger.debug(f'WebSocketManager reconnect: user {user_id}')
+        self.logger.debug(f'WebSocketManager reconnect: user {user_id}')
         if not (target_user_id := message.data.get(FieldNames.USER_ID)):
-            logger.warning(f'WebSocketManager reconnect: {FieldNames.USER_ID} is not found')
+            self.logger.warning(f'WebSocketManager reconnect: {FieldNames.USER_ID} is not found')
             await self.send_personal_message(user_id, Message(
                 type=MessageType.ERROR,
                 data=f'{FieldNames.USER_ID} is missing',
@@ -527,7 +529,7 @@ class WebSocketManager:
         try:
             target_user_id = UUID(target_user_id)
         except ValueError | TypeError:
-            logger.debug(f'WebSocketManager reconnect: {FieldNames.USER_ID} {target_user_id} is invalid')
+            self.logger.debug(f'WebSocketManager reconnect: {FieldNames.USER_ID} {target_user_id} is invalid')
             await self.send_personal_message(user_id, Message(
                 type=MessageType.ERROR,
                 data=f'{FieldNames.USER_ID} is invalid',
@@ -536,7 +538,7 @@ class WebSocketManager:
             return user_id
 
         if target_user_id not in self.__connections:
-            logger.debug(f'WebSocketManager reconnect: {FieldNames.USER_ID} {user_id} is invalid')
+            self.logger.debug(f'WebSocketManager reconnect: {FieldNames.USER_ID} {user_id} is invalid')
             await self.send_personal_message(user_id, Message(
                 type=MessageType.ERROR,
                 data=f'{FieldNames.USER_ID} is invalid',
@@ -544,10 +546,10 @@ class WebSocketManager:
             ))
             return user_id
 
-        logger.debug(f'WebSocketManager reconnect: setting user_id to {target_user_id}')
+        self.logger.debug(f'WebSocketManager reconnect: setting user_id to {target_user_id}')
         self.__connections[target_user_id] = self.__connections[user_id]
         del self.__connections[user_id]
-        logger.debug(f'WebSocketManager reconnect: successfully set user_id to {target_user_id}')
+        self.logger.debug(f'WebSocketManager reconnect: successfully set user_id to {target_user_id}')
         return target_user_id
 
     async def send_personal_message(self, user_id: UUID, message: Message):
@@ -558,26 +560,30 @@ class WebSocketManager:
             message: message to send
         """
         if not message:
-            logger.error(f'send_personal_message: message is None')
+            self.logger.error(f'send_personal_message: message is None')
             return
         if user_ws := self.__connections.get(user_id):
             await user_ws.send_json(message.to_dict())
-            logger.debug(f'WebSocketManager: {user_id} will get: {message.to_dict()}')
+            self.logger.debug(f'WebSocketManager: {user_id} will get: {message.to_dict()}')
 
     async def broadcast(self, addressees: set[UUID], message: Message):
-        logger.debug('broadcast started')
+        self.logger.debug('broadcast started')
         for addressee_id in addressees:
             await self.send_personal_message(addressee_id, message)
-        logger.debug('broadcast ended')
+        self.logger.debug('broadcast ended')
 
 
 class MessageHandler:
     """
     This class holds all the logic to handle received messages
     """
-    def __init__(self, ws_manager: WebSocketManager, db: DB):
+
+    def __init__(self, ws_manager: WebSocketManager, db: DB, logger: logging.Logger,
+                 COLLECTING_STAMPS_QUESTIONS_PER_PLAYER: int):
         self.ws_manager = ws_manager
         self.db = db
+        self.logger = logger
+        self.COLLECTING_STAMPS_QUESTIONS_PER_PLAYER = COLLECTING_STAMPS_QUESTIONS_PER_PLAYER
 
     async def handle_message(self, user_id: UUID, message: Message) -> Message:
         """
@@ -609,11 +615,11 @@ class MessageHandler:
             }
 
             if handler := handlers.get(message_type):
-                logger.info(f'handle_message: {handler.__name__} will be used')
+                self.logger.info(f'handle_message: {handler.__name__} will be used')
 
                 return await handler(user_id, message)
 
-            logger.error(f'handle_message: no suitable handler for {message_type} is found')
+            self.logger.error(f'handle_message: no suitable handler for {message_type} is found')
 
             return Message(
                 type=MessageType.ERROR,
@@ -623,7 +629,7 @@ class MessageHandler:
 
         # TODO specify Exception
         except Exception as e:
-            logger.warning(f'handle_message: unknown error: {e}')
+            self.logger.warning(f'handle_message: unknown error: {e}')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -642,7 +648,7 @@ class MessageHandler:
         """
         try:
             if not message.data:
-                logger.warning(f'handle_get_user_info: message has no {FieldNames.USER_ID}')
+                self.logger.warning(f'handle_get_user_info: message has no {FieldNames.USER_ID}')
                 return Message(
                     type=MessageType.ERROR,
                     data=f'{FieldNames.USER_ID} is missing',
@@ -655,7 +661,7 @@ class MessageHandler:
                     data=user.to_dict(),
                     request_id=message.request_id
                 )
-            logger.warning(f'handle_get_user_info: user with id {user_id} is not found')
+            self.logger.warning(f'handle_get_user_info: user with id {user_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='user not found',
@@ -663,14 +669,14 @@ class MessageHandler:
             )
         # TODO specify Exception
         except ValueError:
-            logger.warning(f'handle_get_user_info: {message.data.get(FieldNames.USER_ID)} is an invalid UUID')
+            self.logger.warning(f'handle_get_user_info: {message.data.get(FieldNames.USER_ID)} is an invalid UUID')
             return Message(
                 type=MessageType.ERROR,
                 data=f'{FieldNames.USER_ID} is an invalid UUID',
                 request_id=message.request_id
             )
         except Exception as e:
-            logger.warning(f'handle_get_user_info: unknown error: {e}')
+            self.logger.warning(f'handle_get_user_info: unknown error: {e}')
             return Message(
                 type=MessageType.ERROR,
                 data=str(e),
@@ -693,17 +699,17 @@ class MessageHandler:
                 FieldNames.GROUP_ID: None,
             }
 
-            if not (old_user := self.db.get_user(user_id)): # Creating a user
-                logger.debug(f'handle_set_user_info: creating user with id {user_id}')
-            else: # Updating the user
-                logger.debug(f'handle_set_user_info: updating user with id {user_id}')
+            if not (old_user := self.db.get_user(user_id)):  # Creating a user
+                self.logger.debug(f'handle_set_user_info: creating user with id {user_id}')
+            else:  # Updating the user
+                self.logger.debug(f'handle_set_user_info: updating user with id {user_id}')
                 if group_id := old_user.group_id:
                     message.data = message.data | {FieldNames.USER_GROUP_ID: group_id.hex}
 
             new_user = User.from_dict(message.data)
             self.db.add_or_update_user(user=new_user)
 
-            logger.debug(f'handle_set_user_info: success')
+            self.logger.debug(f'handle_set_user_info: success')
             if old_user and (group := self.db.get_group(old_user.group_id)):
                 await self.ws_manager.broadcast(
                     group.members - {user_id},
@@ -713,7 +719,7 @@ class MessageHandler:
                         request_id=uuid4()
                     )
                 )
-                logger.debug(f'handle_set_user_info: all the members of the group {group.id} are notified')
+                self.logger.debug(f'handle_set_user_info: all the members of the group {group.id} are notified')
 
             return Message(
                 type=MessageType.SUCCESS,
@@ -724,7 +730,7 @@ class MessageHandler:
             )
         # TODO specify Exception
         except Exception as e:
-            logger.warning(f'handle_set_user_info: unknown error: {e}')
+            self.logger.warning(f'handle_set_user_info: unknown error: {e}')
             return Message(
                 type=MessageType.ERROR,
                 data='failed to create or update user',
@@ -743,7 +749,7 @@ class MessageHandler:
         """
         try:
             if not message.data:
-                logger.warning(f'handle_get_group_info: message has no {FieldNames.GROUP_ID}')
+                self.logger.warning(f'handle_get_group_info: message has no {FieldNames.GROUP_ID}')
                 return Message(
                     type=MessageType.ERROR,
                     data=f'{FieldNames.GROUP_ID} is missing',
@@ -751,7 +757,7 @@ class MessageHandler:
                 )
             group_id = UUID(message.data)
             if not (group := self.db.get_group(group_id)):
-                logger.warning(f'handle_get_group_info: group with id {group_id} is not found')
+                self.logger.warning(f'handle_get_group_info: group with id {group_id} is not found')
                 return Message(
                     type=MessageType.ERROR,
                     data=f'group with {FieldNames.GROUP_ID} = {group_id} is not found',
@@ -763,7 +769,7 @@ class MessageHandler:
                 request_id=message.request_id
             )
         except ValueError:
-            logger.warning(f'handle_get_group_info: {message.data.get(FieldNames.GROUP_ID)} is an invalid UUID')
+            self.logger.warning(f'handle_get_group_info: {message.data.get(FieldNames.GROUP_ID)} is an invalid UUID')
             return Message(
                 type=MessageType.ERROR,
                 data=f'{FieldNames.USER_ID} is an invalid UUID',
@@ -771,7 +777,7 @@ class MessageHandler:
             )
         # TODO specify Exception
         except Exception as e:
-            logger.warning(f'handle_get_group_info: unknown error: {e}')
+            self.logger.warning(f'handle_get_group_info: unknown error: {e}')
             return Message(
                 type=MessageType.ERROR,
                 data=f'handle_get_group_info: unknown error: {e}',
@@ -793,23 +799,23 @@ class MessageHandler:
         """
         try:
             if not (user := self.db.get_user(user_id)):
-                logger.error(f'handle_set_group_info: user with id {user_id} is not found')
+                self.logger.error(f'handle_set_group_info: user with id {user_id} is not found')
                 return Message(
                     type=MessageType.ERROR,
                     data='handle_set_group_info: unknown error',
                     request_id=message.request_id
                 )
-            if user.group_id: # user is a group member
-                if not (group := self.db.get_group(user.group_id)): # a member of non-existent group
-                    logger.error(f'handle_set_group_info: group with id {user.group_id} is not found')
+            if user.group_id:  # user is a group member
+                if not (group := self.db.get_group(user.group_id)):  # a member of non-existent group
+                    self.logger.error(f'handle_set_group_info: group with id {user.group_id} is not found')
                     return Message(
                         type=MessageType.ERROR,
                         data='handle_set_group_info: unknown error',
                         request_id=message.request_id
                     )
 
-                if group.admin_id != user_id: # not an admin
-                    logger.error(f'handle_set_group_info: change is not allowed as user is not an admin')
+                if group.admin_id != user_id:  # not an admin
+                    self.logger.error(f'handle_set_group_info: change is not allowed as user is not an admin')
                     return Message(
                         type=MessageType.ERROR,
                         data='user is already a group member, leave a group to create one',
@@ -818,7 +824,7 @@ class MessageHandler:
 
                 group.update_from_dict(message.data)
                 self.db.add_or_update_group(group)
-                logger.debug(f'handle_set_group_info: group info updated by the admin')
+                self.logger.debug(f'handle_set_group_info: group info updated by the admin')
 
                 await self.ws_manager.broadcast(
                     group.members - {user_id},
@@ -828,7 +834,7 @@ class MessageHandler:
                         request_id=uuid4()
                     )
                 )
-                logger.debug(f'handle_set_group_info: all the members of the group {group.id} are notified')
+                self.logger.debug(f'handle_set_group_info: all the members of the group {group.id} are notified')
 
                 return Message(
                     type=MessageType.SUCCESS,
@@ -845,7 +851,7 @@ class MessageHandler:
             user.group_id = group.id
             self.db.add_or_update_user(user)
 
-            logger.debug(f'handle_set_group_info: created a group with id {group.id}')
+            self.logger.debug(f'handle_set_group_info: created a group with id {group.id}')
             return Message(
                 type=MessageType.SUCCESS,
                 data=None,
@@ -853,28 +859,28 @@ class MessageHandler:
             )
 
         except KeyError:
-            logger.debug(f'handle_set_group_info: some field is missing')
+            self.logger.debug(f'handle_set_group_info: some field is missing')
             return Message(
                 type=MessageType.ERROR,
                 data='some field is missing',
                 request_id=message.request_id
             )
         except TypeError:
-            logger.debug(f'handle_set_group_info: id is None')
+            self.logger.debug(f'handle_set_group_info: id is None')
             return Message(
                 type=MessageType.ERROR,
                 data='id is null',
                 request_id=message.request_id
             )
         except ValueError:
-            logger.debug(f'handle_set_group_info: id is invalid')
+            self.logger.debug(f'handle_set_group_info: id is invalid')
             return Message(
                 type=MessageType.ERROR,
                 data='invalid id',
                 request_id=message.request_id
             )
         except Exception as e:
-            logger.error(f'handle_set_group_info: unknown error: {str(e)}')
+            self.logger.error(f'handle_set_group_info: unknown error: {str(e)}')
             return Message(
                 type=MessageType.ERROR,
                 data='unknown error',
@@ -892,7 +898,7 @@ class MessageHandler:
             A response message with 'success' status and no data or an error message
         """
         if not message.data:
-            logger.debug(f'handle_join_group: {FieldNames.GROUP_ID} is missing')
+            self.logger.debug(f'handle_join_group: {FieldNames.GROUP_ID} is missing')
             return Message(
                 type=MessageType.ERROR,
                 data=f'{FieldNames.GROUP_ID} is missing',
@@ -901,7 +907,7 @@ class MessageHandler:
         try:
             target_group_id = UUID(message.data)
             if not (target_group := self.db.get_group(target_group_id)):
-                logger.error(f'handle_join_group: no group with id {target_group_id} is found')
+                self.logger.error(f'handle_join_group: no group with id {target_group_id} is found')
                 return Message(
                     type=MessageType.ERROR,
                     data=f'no group with {FieldNames.GROUP_ID} {target_group_id} is found',
@@ -909,7 +915,7 @@ class MessageHandler:
                 )
 
             if not (user := self.db.get_user(user_id)):
-                logger.error(f'handle_join_group: no user with id {user_id} is found')
+                self.logger.error(f'handle_join_group: no user with id {user_id} is found')
                 return Message(
                     type=MessageType.ERROR,
                     data=f'internal error',
@@ -917,7 +923,7 @@ class MessageHandler:
                 )
 
             if user.group_id:
-                logger.debug(f'handle_join_group: user with id {user_id} is already a group member')
+                self.logger.debug(f'handle_join_group: user with id {user_id} is already a group member')
                 return Message(
                     type=MessageType.ERROR,
                     data=f'already a group member',
@@ -925,7 +931,7 @@ class MessageHandler:
                 )
 
             if target_group.is_ready:
-                logger.debug(f'handle_join_group: target group {target_group.id} is ready')
+                self.logger.debug(f'handle_join_group: target group {target_group.id} is ready')
                 return Message(
                     type=MessageType.ERROR,
                     data='target group is ready',
@@ -938,7 +944,7 @@ class MessageHandler:
             user.group_id = target_group_id
             self.db.add_or_update_user(user)
 
-            logger.debug(f'handle_join_group: user with id {user_id} joined the group {target_group_id}')
+            self.logger.debug(f'handle_join_group: user with id {user_id} joined the group {target_group_id}')
 
             await self.ws_manager.broadcast(
                 target_group.members - {user_id},
@@ -948,7 +954,7 @@ class MessageHandler:
                     request_id=uuid4()
                 )
             )
-            logger.debug(f'handle_join_group: all the members of the group {target_group_id} are notified')
+            self.logger.debug(f'handle_join_group: all the members of the group {target_group_id} are notified')
 
             return Message(
                 type=MessageType.SUCCESS,
@@ -956,14 +962,14 @@ class MessageHandler:
                 request_id=message.request_id
             )
         except ValueError:
-            logger.error(f'handle_join_group: invalid UUID: {message.data}')
+            self.logger.error(f'handle_join_group: invalid UUID: {message.data}')
             return Message(
                 type=MessageType.ERROR,
                 data=f'invalid UUID: {message.data}',
                 request_id=message.request_id
             )
         except Exception as e:
-            logger.error(f'handle_join_group: unknown error: {str(e)}')
+            self.logger.error(f'handle_join_group: unknown error: {str(e)}')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -982,7 +988,7 @@ class MessageHandler:
         """
         try:
             if not (user := self.db.get_user(user_id)):
-                logger.error(f'handle_leave_group: user with id {user_id} is not found')
+                self.logger.error(f'handle_leave_group: user with id {user_id} is not found')
                 return Message(
                     type=MessageType.ERROR,
                     data='internal error',
@@ -990,7 +996,7 @@ class MessageHandler:
                 )
 
             if not (group_id := user.group_id):
-                logger.debug(f'handle_leave_group: user with id {user.id} is not a group member')
+                self.logger.debug(f'handle_leave_group: user with id {user.id} is not a group member')
                 return Message(
                     type=MessageType.ERROR,
                     data='user is not a group member',
@@ -1001,48 +1007,52 @@ class MessageHandler:
                 try:
                     id_to_remove = UUID(message.data)
                 except ValueError:
-                    logger.debug(f'handle_leave_group: {message.data} is not a valid UUID')
+                    self.logger.debug(f'handle_leave_group: {message.data} is not a valid UUID')
                     return Message(
                         type=MessageType.ERROR,
                         data=f'{message.data} is not a valid UUID',
                         request_id=message.request_id
                     )
-                logger.debug(f'handle_leave_group: {FieldNames.USER_ID} to remove is set to {user_id}')
+                self.logger.debug(f'handle_leave_group: {FieldNames.USER_ID} to remove is set to {user_id}')
                 if not (user_to_remove := self.db.get_user(id_to_remove)):
-                    logger.debug(f'handle_leave_group: user with id {id_to_remove} is not found')
+                    self.logger.debug(f'handle_leave_group: user with id {id_to_remove} is not found')
                     return Message(
                         type=MessageType.ERROR,
                         data='user is not found',
                         request_id=message.request_id
                     )
             else:
-                logger.debug(f'handle_leave_group: {FieldNames.USER_ID} to remove is not provided and set to {user_id}')
+                self.logger.debug(
+                    f'handle_leave_group: {FieldNames.USER_ID} to remove is not provided and set to {user_id}')
                 id_to_remove = user_id
                 user_to_remove = user
 
             if user_to_remove.group_id != group_id:
-                logger.debug(f'handle_leave_group: user with id {user_to_remove.id} is not a member of the group {group_id}')
+                self.logger.debug(
+                    f'handle_leave_group: user with id {user_to_remove.id} is not a member of the group {group_id}')
                 return Message(
                     type=MessageType.ERROR,
                     data='user is not a member of your group',
                     request_id=message.request_id
                 )
             if not (group := self.db.get_group(group_id)):
-                logger.error(f'handle_leave_group: no group with id {group_id} is found')
+                self.logger.error(f'handle_leave_group: no group with id {group_id} is found')
                 return Message(
                     type=MessageType.ERROR,
                     data=f'no group with {FieldNames.GROUP_ID} {group_id} is found',
                     request_id=message.request_id
                 )
             if id_to_remove != user_id and group.admin_id != user_id:
-                logger.debug(f'handle_leave_group: user {user_id} tried to kick out {id_to_remove}. Operation denied due to lack of permissions')
+                self.logger.debug(
+                    f'handle_leave_group: user {user_id} tried to kick out {id_to_remove}. Operation denied due to lack of permissions')
                 return Message(
                     type=MessageType.ERROR,
                     data='operation not permitted',
                     request_id=message.request_id
                 )
             if id_to_remove == group.admin_id:
-                logger.debug(f'handle_leave_group: user {id_to_remove} is an admin of the group {group_id} and therefore cannot leave')
+                self.logger.debug(
+                    f'handle_leave_group: user {id_to_remove} is an admin of the group {group_id} and therefore cannot leave')
                 return Message(
                     type=MessageType.ERROR,
                     data=f'admin cannot leave the group',
@@ -1052,7 +1062,7 @@ class MessageHandler:
                 group.members.remove(id_to_remove)
                 self.db.add_or_update_group(group)
             except KeyError:
-                logger.debug(f'handle_leave_group: user {id_to_remove} is not a member of group {group_id}')
+                self.logger.debug(f'handle_leave_group: user {id_to_remove} is not a member of group {group_id}')
                 return Message(
                     type=MessageType.ERROR,
                     data=f'{id_to_remove} is not a member of group {group_id}',
@@ -1062,8 +1072,7 @@ class MessageHandler:
             user_to_remove.group_id = None
             self.db.add_or_update_user(user_to_remove)
 
-            logger.debug(f'handle_leave_group: user {id_to_remove} left the group {group_id}')
-
+            self.logger.debug(f'handle_leave_group: user {id_to_remove} left the group {group_id}')
             await self.ws_manager.broadcast(
                 group.members.union({id_to_remove}) - {user_id},
                 Message(
@@ -1072,14 +1081,14 @@ class MessageHandler:
                     request_id=uuid4()
                 )
             )
-            logger.debug(f'handle_leave_group: all the members of the group {group_id} are notified')
+            self.logger.debug(f'handle_leave_group: all the members of the group {group_id} are notified')
             return Message(
                 type=MessageType.SUCCESS,
                 data=None,
                 request_id=message.request_id
             )
         except Exception as e:
-            logger.error(f'handle_leave_group: unknown error: {str(e)}')
+            self.logger.error(f'handle_leave_group: unknown error: {str(e)}')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1097,7 +1106,7 @@ class MessageHandler:
             A response message with 'success' status and no data or an error message
         """
         if not (user := self.db.get_user(user_id)):
-            logger.error(f'handle_delete_group: user {user_id} is not found')
+            self.logger.error(f'handle_delete_group: user {user_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1105,7 +1114,7 @@ class MessageHandler:
             )
 
         if not (group := self.db.get_group(user.group_id)):
-            logger.debug(f'handle_delete_group: group {user.group_id} is not found')
+            self.logger.debug(f'handle_delete_group: group {user.group_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='group is not found',
@@ -1113,15 +1122,15 @@ class MessageHandler:
             )
 
         if group.admin_id != user_id:
-            logger.debug(f'handle_delete_group: only admin can delete a group')
+            self.logger.debug(f'handle_delete_group: only admin can delete a group')
             return Message(
                 type=MessageType.ERROR,
                 data='only admin can delete a group',
                 request_id=message.request_id
             )
 
-        group.members.remove(user_id) # remove admin first
-        for member_id in group.members: # notify & update members
+        group.members.remove(user_id)  # remove admin first
+        for member_id in group.members:  # notify & update members
             await self.ws_manager.send_personal_message(
                 member_id,
                 Message(
@@ -1133,15 +1142,16 @@ class MessageHandler:
             if member := self.db.get_user(member_id):
                 member.group_id = None
                 self.db.add_or_update_user(member)
-                logger.debug(f'handle_delete_group: delete a member with id {member_id}')
+                self.logger.debug(f'handle_delete_group: delete a member with id {member_id}')
             else:
-                logger.error(f'handle_delete_group: member {member_id} of a group {group.id} is not found')
+                self.logger.error(f'handle_delete_group: member {member_id} of a group {group.id} is not found')
 
         user.group_id = None
         self.db.add_or_update_user(user)
         self.db.delete_group(group.id)
 
-        logger.debug(f'handle_delete_group: the group with id {group.id} has been deleted successfully. All the members are notified')
+        self.logger.debug(
+            f'handle_delete_group: the group with id {group.id} has been deleted successfully. All the members are notified')
 
         return Message(
             type=MessageType.SUCCESS,
@@ -1151,7 +1161,7 @@ class MessageHandler:
 
     async def handle_get_teams(self, user_id: UUID, message: Message) -> Message:
         if not (user := self.db.get_user(user_id)):
-            logger.error(f'handle_get_teams: user {user_id} is not found')
+            self.logger.error(f'handle_get_teams: user {user_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1159,7 +1169,7 @@ class MessageHandler:
             )
 
         if not user.group_id:
-            logger.debug(f'handle_get_teams: user {user_id} is not a group member')
+            self.logger.debug(f'handle_get_teams: user {user_id} is not a group member')
             return Message(
                 type=MessageType.ERROR,
                 data=f'user {user_id} is not a group member',
@@ -1169,7 +1179,7 @@ class MessageHandler:
         try:
             teams = self.db.get_group_teams(user.group_id)
         except ValueError:
-            logger.error(f'handle_get_teams: group {user.group_id} is not found')
+            self.logger.error(f'handle_get_teams: group {user.group_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1184,7 +1194,7 @@ class MessageHandler:
 
     async def handle_set_teams(self, user_id: UUID, message: Message) -> Message:
         if not (user := self.db.get_user(user_id)):
-            logger.error(f'handle_set_teams: user {user_id} is not found')
+            self.logger.error(f'handle_set_teams: user {user_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1192,7 +1202,7 @@ class MessageHandler:
             )
 
         if not user.group_id:
-            logger.debug(f'handle_set_teams: user {user_id} is not a group member')
+            self.logger.debug(f'handle_set_teams: user {user_id} is not a group member')
             return Message(
                 type=MessageType.ERROR,
                 data=f'user {user_id} is not a group member',
@@ -1200,7 +1210,7 @@ class MessageHandler:
             )
 
         if not (group := self.db.get_group(user.group_id)):
-            logger.error(f'handle_set_teams: group with id {user.group_id} is not found')
+            self.logger.error(f'handle_set_teams: group with id {user.group_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data=f'group with {FieldNames.GROUP_ID} = {user.group_id} is not found',
@@ -1208,7 +1218,7 @@ class MessageHandler:
             )
 
         if group.is_ready:
-            logger.debug(f'handle_set_teams: group {group.id} is ready')
+            self.logger.debug(f'handle_set_teams: group {group.id} is ready')
             return Message(
                 type=MessageType.ERROR,
                 data='group is ready',
@@ -1216,7 +1226,7 @@ class MessageHandler:
             )
 
         if group.admin_id != user_id:
-            logger.debug(f'handle_set_teams: only admin can set teams')
+            self.logger.debug(f'handle_set_teams: only admin can set teams')
             return Message(
                 type=MessageType.ERROR,
                 data='only admin can set teams',
@@ -1231,7 +1241,7 @@ class MessageHandler:
             try:
                 # TODO check the case when message.data is not a list
                 if not (team_id := raw_team.get(FieldNames.TEAM_ID)):
-                    logger.warning(f'handle_set_teams: team has no {FieldNames.TEAM_ID}')
+                    self.logger.warning(f'handle_set_teams: team has no {FieldNames.TEAM_ID}')
                     return Message(
                         type=MessageType.ERROR,
                         data=f'{FieldNames.TEAM_ID} is missing',
@@ -1240,14 +1250,14 @@ class MessageHandler:
                 team_id = int(team_id)
                 # TODO check the case when members is not a list
                 if not (members := raw_team.get(FieldNames.TEAM_MEMBERS)):
-                    logger.warning(f'handle_set_teams: {FieldNames.TEAM_MEMBERS} list is missing')
+                    self.logger.warning(f'handle_set_teams: {FieldNames.TEAM_MEMBERS} list is missing')
                     return Message(
                         type=MessageType.ERROR,
                         data=f'{FieldNames.TEAM_MEMBERS} list is missing or empty',
                         request_id=message.request_id
                     )
             except ValueError:
-                logger.warning(f'handle_set_teams: team id {FieldNames.TEAM_ID} is not an integer')
+                self.logger.warning(f'handle_set_teams: team id {FieldNames.TEAM_ID} is not an integer')
                 return Message(
                     type=MessageType.ERROR,
                     data=f'{FieldNames.TEAM_ID} is invalid',
@@ -1257,7 +1267,7 @@ class MessageHandler:
             try:
                 members = list(map(UUID, members))
             except ValueError:
-                logger.warning("handle_set_teams: member's id is invalid")
+                self.logger.warning("handle_set_teams: member's id is invalid")
                 return Message(
                     type=MessageType.ERROR,
                     data="member's id is invalid",
@@ -1272,7 +1282,8 @@ class MessageHandler:
                     unassigned_members.remove(member_id)
                     assigned_members.add(member_id)
                 except KeyError:
-                    logger.warning(f'handle_set_teams: member {member_id} is already in another team or does not exist')
+                    self.logger.warning(
+                        f'handle_set_teams: member {member_id} is already in another team or does not exist')
                     return Message(
                         type=MessageType.ERROR,
                         data=f'member {member_id} is already in another team or does not exist',
@@ -1280,7 +1291,7 @@ class MessageHandler:
                     )
 
         if len(unassigned_members) > 0:
-            logger.warning(f'handle_set_teams: some group members do not have a team')
+            self.logger.warning(f'handle_set_teams: some group members do not have a team')
             return Message(
                 type=MessageType.ERROR,
                 data=f'some group members do not have a team',
@@ -1290,7 +1301,7 @@ class MessageHandler:
         for team in teams:
             self.db.add_or_update_team(team)
 
-        logger.debug(f'handle_set_teams: teams updated by the admin')
+        self.logger.debug(f'handle_set_teams: teams updated by the admin')
 
         await self.ws_manager.broadcast(
             assigned_members - {user_id},
@@ -1300,7 +1311,7 @@ class MessageHandler:
                 request_id=uuid4()
             )
         )
-        logger.debug(f'handle_set_teams: all the members of the group {group.id} are notified')
+        self.logger.debug(f'handle_set_teams: all the members of the group {group.id} are notified')
 
         return Message(
             type=MessageType.SUCCESS,
@@ -1310,7 +1321,7 @@ class MessageHandler:
 
     async def handle_set_user_ready(self, user_id: UUID, message: Message) -> Message:
         if not isinstance(is_ready := message.data, bool):
-            logger.warning(f'handle_set_user_ready: data is invalid')
+            self.logger.warning(f'handle_set_user_ready: data is invalid')
             return Message(
                 type=MessageType.ERROR,
                 data='data is invalid',
@@ -1318,7 +1329,7 @@ class MessageHandler:
             )
 
         if not (user := self.db.get_user(user_id)):
-            logger.error(f'handle_set_user_ready: user {user_id} is not found')
+            self.logger.error(f'handle_set_user_ready: user {user_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1326,7 +1337,7 @@ class MessageHandler:
             )
 
         # if user.is_ready == is_ready:
-        #     logger.debug(f'handle_set_user_ready: old and new value of {FieldNames.USER_IS_READY} for the user {user_id} are the same')
+        #     self.logger.debug(f'handle_set_user_ready: old and new value of {FieldNames.USER_IS_READY} for the user {user_id} are the same')
         #     return Message(
         #         type=MessageType.SUCCESS,
         #         data=f'old and new value of {FieldNames.USER_IS_READY} are the same',
@@ -1334,7 +1345,7 @@ class MessageHandler:
         #     )
 
         if not user.group_id:
-            logger.debug(f'handle_set_user_ready: user {user_id} is not a group member')
+            self.logger.debug(f'handle_set_user_ready: user {user_id} is not a group member')
             return Message(
                 type=MessageType.ERROR,
                 data=f'user {user_id} is not a group member',
@@ -1342,7 +1353,7 @@ class MessageHandler:
             )
 
         if not (teams := self.db.get_group_teams(user.group_id)):
-            logger.debug(f'handle_set_user_ready: group {user.group_id} has no teams')
+            self.logger.debug(f'handle_set_user_ready: group {user.group_id} has no teams')
             return Message(
                 type=MessageType.ERROR,
                 data='group has no teams',
@@ -1351,7 +1362,7 @@ class MessageHandler:
 
         teams = filter(lambda team: user_id in team.members, teams)
         if not (team := next(teams, None)):
-            logger.debug(f'handle_set_user_ready: user {user_id} in group {user.group_id} is not a team member')
+            self.logger.debug(f'handle_set_user_ready: user {user_id} in group {user.group_id} is not a team member')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1359,7 +1370,8 @@ class MessageHandler:
             )
 
         if next(teams, False):
-            logger.error(f'handle_set_user_ready: user {user_id} in group {user.group_id} is a member of multiple teams')
+            self.logger.error(
+                f'handle_set_user_ready: user {user_id} in group {user.group_id} is a member of multiple teams')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1367,16 +1379,17 @@ class MessageHandler:
             )
 
         if user.is_ready == is_ready:
-            logger.debug(f'handle_set_user_ready: old and new value of {FieldNames.USER_IS_READY} for the user {user_id} are the same')
+            self.logger.debug(
+                f'handle_set_user_ready: old and new value of {FieldNames.USER_IS_READY} for the user {user_id} are the same')
         else:
             user.is_ready = is_ready
             self.db.add_or_update_user(user)
 
-        logger.debug(f'handle_set_user_ready: user {user_id} is {'' if is_ready else 'not '}ready')
+        self.logger.debug(f'handle_set_user_ready: user {user_id} is {'' if is_ready else 'not '}ready')
         members: list[User] = self.db.get_team_members(user.group_id, team.id)
 
         if team_is_ready := all(member.is_ready for member in members):
-            logger.debug(f'handle_set_user_ready: all the members are ready')
+            self.logger.debug(f'handle_set_user_ready: all the members are ready')
         await self.ws_manager.broadcast(
             team.members - {user_id},
             Message(
@@ -1389,7 +1402,8 @@ class MessageHandler:
                 request_id=uuid4()
             )
         )
-        logger.debug(f'handle_set_user_ready: all the members of the team ({team.group_id}, {team.id}) are notified')
+        self.logger.debug(
+            f'handle_set_user_ready: all the members of the team ({team.group_id}, {team.id}) are notified')
 
         return Message(
             type=MessageType.SUCCESS,
@@ -1402,35 +1416,35 @@ class MessageHandler:
 
     async def handle_set_group_ready(self, user_id: UUID, message: Message) -> Message:
         if not isinstance(is_ready := message.data, bool):
-            logger.warning(f'handle_set_group_ready: data is invalid')
+            self.logger.warning(f'handle_set_group_ready: data is invalid')
             return Message(
                 type=MessageType.ERROR,
                 data='data is invalid',
                 request_id=message.request_id
             )
         if not (user := self.db.get_user(user_id)):
-            logger.error(f'handle_set_group_ready: user with id {user_id} is not found')
+            self.logger.error(f'handle_set_group_ready: user with id {user_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data=f'internal error',
                 request_id=message.request_id
             )
         if not (group_id := user.group_id):
-            logger.debug(f'handle_set_group_ready: user is not a group member')
+            self.logger.debug(f'handle_set_group_ready: user is not a group member')
             return Message(
                 type=MessageType.ERROR,
                 data='not a group member',
                 request_id=message.request_id
             )
         if not (group := self.db.get_group(group_id)):
-            logger.error(f'handle_set_group_ready: group with id {group_id} is not found')
+            self.logger.error(f'handle_set_group_ready: group with id {group_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
                 request_id=message.request_id
             )
         if user_id != group.admin_id:
-            logger.debug(f'handle_set_group_ready: user {user_id} is an admin')
+            self.logger.debug(f'handle_set_group_ready: user {user_id} is an admin')
             return Message(
                 type=MessageType.ERROR,
                 data='operation is not permitted',
@@ -1438,7 +1452,7 @@ class MessageHandler:
             )
 
         if len(self.db.get_group_teams(group.id)) == 0:
-            logger.debug(f'handle_set_group_ready: group {group.id} has no teams')
+            self.logger.debug(f'handle_set_group_ready: group {group.id} has no teams')
             return Message(
                 type=MessageType.ERROR,
                 data='group has no teams',
@@ -1448,7 +1462,7 @@ class MessageHandler:
         group.is_ready = is_ready
         self.db.add_or_update_group(group)
 
-        logger.debug(f'handle_set_group_ready: group {group_id} ready is set to {is_ready}')
+        self.logger.debug(f'handle_set_group_ready: group {group_id} ready is set to {is_ready}')
         await self.ws_manager.broadcast(
             group.members - {user_id},
             Message(
@@ -1457,7 +1471,7 @@ class MessageHandler:
                 request_id=uuid4()
             )
         )
-        logger.debug(f'handle_set_group_ready: all the members of the group {group_id} are notified')
+        self.logger.debug(f'handle_set_group_ready: all the members of the group {group_id} are notified')
 
         return Message(
             type=MessageType.SUCCESS,
@@ -1467,7 +1481,7 @@ class MessageHandler:
 
     async def handle_collecting_stamps_start(self, user_id, message: Message) -> Message:
         if not (user := self.db.get_user(user_id)):
-            logger.error(f'handle_collecting_stamps_start: user {user_id} is not found')
+            self.logger.error(f'handle_collecting_stamps_start: user {user_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1475,7 +1489,7 @@ class MessageHandler:
             )
 
         if not (group := self.db.get_group(user.group_id)):
-            logger.debug(f'handle_collecting_stamps_start: group {user.group_id} is not found')
+            self.logger.debug(f'handle_collecting_stamps_start: group {user.group_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='not a group member',
@@ -1483,7 +1497,7 @@ class MessageHandler:
             )
 
         if not group.is_ready:
-            logger.debug(f'handle_collecting_stamps_start: group {group.id} is not ready')
+            self.logger.debug(f'handle_collecting_stamps_start: group {group.id} is not ready')
             return Message(
                 type=MessageType.ERROR,
                 data='group is not ready',
@@ -1491,7 +1505,7 @@ class MessageHandler:
             )
 
         if not (teams := self.db.get_group_teams(user.group_id)):
-            logger.debug(f'handle_collecting_stamps_start: group {user.group_id} has no teams')
+            self.logger.debug(f'handle_collecting_stamps_start: group {user.group_id} has no teams')
             return Message(
                 type=MessageType.ERROR,
                 data='group has no teams',
@@ -1500,7 +1514,8 @@ class MessageHandler:
 
         teams = filter(lambda team: user_id in team.members, teams)
         if not (team := next(teams, None)):
-            logger.debug(f'handle_collecting_stamps_start: user {user_id} in group {user.group_id} is not a team member')
+            self.logger.debug(
+                f'handle_collecting_stamps_start: user {user_id} in group {user.group_id} is not a team member')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1508,7 +1523,8 @@ class MessageHandler:
             )
 
         if next(teams, False):
-            logger.error(f'handle_collecting_stamps_start: user {user_id} in group {user.group_id} is a member of multiple teams')
+            self.logger.error(
+                f'handle_collecting_stamps_start: user {user_id} in group {user.group_id} is a member of multiple teams')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1517,7 +1533,7 @@ class MessageHandler:
 
         members: list[User] = self.db.get_team_members(user.group_id, team.id)
         if not all(member.is_ready for member in members):
-            logger.error(f'handle_collecting_stamps_start: not all the members are ready')
+            self.logger.error(f'handle_collecting_stamps_start: not all the members are ready')
             return Message(
                 type=MessageType.ERROR,
                 data='not all the members are ready',
@@ -1525,21 +1541,23 @@ class MessageHandler:
             )
 
         for team_member in team.members - {user_id}:
-            logger.debug(f'handle_collecting_stamps_start: member {team_member}')
+            self.logger.debug(f'handle_collecting_stamps_start: member {team_member}')
             game_states: Dict[GameType: BaseGameState] = self.db.get_game_states(team_member) or dict()
 
             if GameType.COLLECTING_STAMPS in game_states.keys():
-                logger.debug(f'handle_collecting_stamps_start: user {user_id} already has a {GameType.COLLECTING_STAMPS} game state')
+                self.logger.debug(
+                    f'handle_collecting_stamps_start: user {user_id} already has a {GameType.COLLECTING_STAMPS} game state')
                 return Message(
                     type=MessageType.ERROR,
                     data='already played',
                     request_id=message.request_id
                 )
 
-            new_state = CollectingStampsState(self.db.get_random_questions(COLLECTING_STAMPS_QUESTIONS_PER_PLAYER))
+            new_state = CollectingStampsState(self.db.get_random_questions(self.COLLECTING_STAMPS_QUESTIONS_PER_PLAYER))
             game_states[GameType.COLLECTING_STAMPS] = new_state
             self.db.add_or_update_game_states(team_member, game_states)
-            logger.debug(f'handle_collecting_stamps_start: {GameType.COLLECTING_STAMPS} game started for the user {team_member}')
+            self.logger.debug(
+                f'handle_collecting_stamps_start: {GameType.COLLECTING_STAMPS} game started for the user {team_member}')
 
             await self.ws_manager.send_personal_message(
                 team_member,
@@ -1549,22 +1567,25 @@ class MessageHandler:
                     request_id=uuid4()
                 )
             )
-        logger.debug(f'handle_collecting_stamps_start: all the members of the team ({team.group_id}, {team.id}) are notified')
+        self.logger.debug(
+            f'handle_collecting_stamps_start: all the members of the team ({team.group_id}, {team.id}) are notified')
 
         game_states: Dict[GameType: BaseGameState] = self.db.get_game_states(user_id) or dict()
 
         if GameType.COLLECTING_STAMPS in game_states.keys():
-            logger.debug(f'handle_collecting_stamps_start: user {user_id} already has a {GameType.COLLECTING_STAMPS} game state')
+            self.logger.debug(
+                f'handle_collecting_stamps_start: user {user_id} already has a {GameType.COLLECTING_STAMPS} game state')
             return Message(
                 type=MessageType.ERROR,
                 data='already played',
                 request_id=message.request_id
             )
 
-        new_state = CollectingStampsState(self.db.get_random_questions(COLLECTING_STAMPS_QUESTIONS_PER_PLAYER))
+        new_state = CollectingStampsState(self.db.get_random_questions(self.COLLECTING_STAMPS_QUESTIONS_PER_PLAYER))
         game_states[GameType.COLLECTING_STAMPS] = new_state
         self.db.add_or_update_game_states(user_id, game_states)
-        logger.debug(f'handle_collecting_stamps_start: {GameType.COLLECTING_STAMPS} game started for the user {user_id}')
+        self.logger.debug(
+            f'handle_collecting_stamps_start: {GameType.COLLECTING_STAMPS} game started for the user {user_id}')
 
         return Message(
             type=MessageType.SUCCESS,
@@ -1574,7 +1595,7 @@ class MessageHandler:
 
     async def handle_collecting_stamps_progress_update(self, user_id, message: Message) -> Message:
         if not isinstance(answered_correctly := message.data.get('answered_correctly'), bool):
-            logger.warning(f'handle_collecting_stamps_progress: data is invalid')
+            self.logger.warning(f'handle_collecting_stamps_progress: data is invalid')
             return Message(
                 type=MessageType.ERROR,
                 data='data is invalid',
@@ -1582,7 +1603,8 @@ class MessageHandler:
             )
 
         if not (question_text := message.data.get(FieldNames.COLLECTING_STAMPS_QUESTION_TEXT)):
-            logger.debug(f'handle_collecting_stamps_progress: {FieldNames.COLLECTING_STAMPS_QUESTION_TEXT} is missing')
+            self.logger.debug(
+                f'handle_collecting_stamps_progress: {FieldNames.COLLECTING_STAMPS_QUESTION_TEXT} is missing')
             return Message(
                 type=MessageType.ERROR,
                 data=f'{FieldNames.COLLECTING_STAMPS_QUESTION_TEXT} is missing',
@@ -1590,7 +1612,7 @@ class MessageHandler:
             )
 
         if not (user := self.db.get_user(user_id)):
-            logger.error(f'handle_collecting_stamps_progress: user {user_id} is not found')
+            self.logger.error(f'handle_collecting_stamps_progress: user {user_id} is not found')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1598,7 +1620,7 @@ class MessageHandler:
             )
 
         if not (game_states := self.db.get_game_states(user_id)):
-            logger.debug(f'handle_collecting_stamps_progress: user {user_id} has not started any games yet')
+            self.logger.debug(f'handle_collecting_stamps_progress: user {user_id} has not started any games yet')
             return Message(
                 type=MessageType.ERROR,
                 data='no started games',
@@ -1606,7 +1628,8 @@ class MessageHandler:
             )
 
         if not (stamps_state := game_states.get(GameType.COLLECTING_STAMPS)):
-            logger.debug(f'handle_collecting_stamps_progress: user {user_id} has not started {GameType.COLLECTING_STAMPS} game')
+            self.logger.debug(
+                f'handle_collecting_stamps_progress: user {user_id} has not started {GameType.COLLECTING_STAMPS} game')
             return Message(
                 type=MessageType.ERROR,
                 data=f'{GameType.COLLECTING_STAMPS} is not started',
@@ -1616,7 +1639,7 @@ class MessageHandler:
         progress: int = stamps_state.update_progress(question_text, answered_correctly)
 
         if not (teams := self.db.get_group_teams(user.group_id)):
-            logger.debug(f'handle_collecting_stamps_progress: group {user.group_id} has no teams')
+            self.logger.debug(f'handle_collecting_stamps_progress: group {user.group_id} has no teams')
             return Message(
                 type=MessageType.ERROR,
                 data='group has no teams',
@@ -1625,7 +1648,8 @@ class MessageHandler:
 
         teams = filter(lambda team: user_id in team.members, teams)
         if not (team := next(teams, None)):
-            logger.debug(f'handle_collecting_stamps_progress: user {user_id} in group {user.group_id} is not a team member')
+            self.logger.debug(
+                f'handle_collecting_stamps_progress: user {user_id} in group {user.group_id} is not a team member')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1633,7 +1657,8 @@ class MessageHandler:
             )
 
         if next(teams, False):
-            logger.error(f'handle_collecting_stamps_progress: user {user_id} in group {user.group_id} is a member of multiple teams')
+            self.logger.error(
+                f'handle_collecting_stamps_progress: user {user_id} in group {user.group_id} is a member of multiple teams')
             return Message(
                 type=MessageType.ERROR,
                 data='internal error',
@@ -1656,19 +1681,6 @@ class MessageHandler:
         )
 
 
-app = FastAPI()
-db = DB()
-ws_manager = WebSocketManager(db)
-message_handler = MessageHandler(ws_manager, db)
-logger = logging.getLogger('uvicorn.error')
-COLLECTING_STAMPS_QUESTIONS_PER_PLAYER = 5
-
-
-@app.get('/')
-async def get():
-    return FileResponse('index.html')
-
-
 def log_message(func, text):
     LOG_MAX_MESSAGE_LINES = 15
     textlines = text.splitlines()
@@ -1679,81 +1691,100 @@ def log_message(func, text):
         func(f'\t{len(textlines) - LOG_MAX_MESSAGE_LINES} more lines are suppressed')
 
 
-@app.websocket('/ws')
-async def websocket_endpoint(ws: WebSocket):
-    user_id = await ws_manager.connect(ws)
-    db.add_or_update_user(User(
-        user_id,
-        None,
-        None
-    ))
-    try:
-        while True:
-            text = await ws.receive_text()
-            logger.debug(f'Received a message from the user with id {user_id}:')
-            log_message(logger.debug, text)
+def create_app():
+    # app = FastAPI()
+    # app.state.my_state = False
+    app = FastAPI()
+    app.state.logger = logging.getLogger('uvicorn.error')
+    app.state.db = DB(app.state.logger)
+    app.state.ws_manager = WebSocketManager(app.state.db, app.state.logger)
+    app.state.COLLECTING_STAMPS_QUESTIONS_PER_PLAYER = 5
+    app.state.message_handler = MessageHandler(app.state.ws_manager, app.state.db, app.state.logger,
+                                               app.state.COLLECTING_STAMPS_QUESTIONS_PER_PLAYER)
 
-            try:
-                message = Message.from_dict(json.loads(text))
+    @app.get('/')
+    async def get():
+        return FileResponse('index.html')
 
-                if message.type != MessageType.RECONNECT:
-                    response = await message_handler.handle_message(user_id, message)
-                    await ws_manager.send_personal_message(user_id, response)
-                else:
-                    user_id = ws_manager.reconnect(user_id, message)
+    @app.websocket('/ws')
+    async def websocket_endpoint(ws: WebSocket):
+        user_id = await app.state.ws_manager.connect(ws)
+        app.state.db.add_or_update_user(User(
+            user_id,
+            None,
+            None
+        ))
+        try:
+            while True:
+                text = await ws.receive_text()
+                app.state.logger.debug(f'Received a message from the user with id {user_id}:')
+                log_message(app.state.logger.debug, text)
 
-            except json.JSONDecodeError: # Invalid json
-                logger.warning(f'Invalid json message received from the user {user_id}: failed to decode')
-                log_message(logger.warning, text)
+                try:
+                    message = Message.from_dict(json.loads(text))
 
-                await ws_manager.send_personal_message(
-                    user_id,
-                    Message(
-                        type=MessageType.ERROR,
-                        data='invalid json',
-                        request_id=uuid4()
+                    if message.type != MessageType.RECONNECT:
+                        response = await app.state.message_handler.handle_message(user_id, message)
+                        await app.state.ws_manager.send_personal_message(user_id, response)
+                    else:
+                        user_id = app.state.ws_manager.reconnect(user_id, message)
+
+                except json.JSONDecodeError:  # Invalid json
+                    app.state.logger.warning(f'Invalid json message received from the user {user_id}: failed to decode')
+                    log_message(app.state.logger.warning, text)
+
+                    await app.state.ws_manager.send_personal_message(
+                        user_id,
+                        Message(
+                            type=MessageType.ERROR,
+                            data='invalid json',
+                            request_id=uuid4()
+                        )
                     )
-                )
-            except TypeError as e: # cannot serialize object
-                logger.warning(f'internal error. User {user_id}: {e}')
-                log_message(logger.warning, text)
+                except TypeError as e:  # cannot serialize object
+                    app.state.logger.warning(f'internal error. User {user_id}: {e}')
+                    log_message(app.state.logger.warning, text)
 
-                await ws_manager.send_personal_message(
-                    user_id,
-                    Message(
-                        type=MessageType.ERROR,
-                        data='internal error',
-                        request_id=uuid4()
+                    await app.state.ws_manager.send_personal_message(
+                        user_id,
+                        Message(
+                            type=MessageType.ERROR,
+                            data='internal error',
+                            request_id=uuid4()
+                        )
                     )
-                )
-            except KeyError as e: # Failed to decode a message as there is a key missing
-                logger.warning(f'Invalid message received from the user {user_id}: key {e} is missing')
-                log_message(logger.warning, text)
+                except KeyError as e:  # Failed to decode a message as there is a key missing
+                    app.state.logger.warning(f'Invalid message received from the user {user_id}: key {e} is missing')
+                    log_message(app.state.logger.warning, text)
 
-                await ws_manager.send_personal_message(
-                    user_id,
-                    Message(
-                        type=MessageType.ERROR,
-                        data=f'a key is missing',
-                        request_id=uuid4()
+                    await app.state.ws_manager.send_personal_message(
+                        user_id,
+                        Message(
+                            type=MessageType.ERROR,
+                            data=f'a key is missing',
+                            request_id=uuid4()
+                        )
                     )
-                )
-            except ValueError: # requestId is an invalid UUID
-                logger.warning(f'Invalid message received from the user {user_id}: invalid UUID')
-                log_message(logger.warning, text)
+                except ValueError:  # requestId is an invalid UUID
+                    app.state.logger.warning(f'Invalid message received from the user {user_id}: invalid UUID')
+                    log_message(app.state.logger.warning, text)
 
-                await ws_manager.send_personal_message(
-                    user_id,
-                    Message(
-                        type=MessageType.ERROR,
-                        data='invalid UUID',
-                        request_id=uuid4()
+                    await app.state.ws_manager.send_personal_message(
+                        user_id,
+                        Message(
+                            type=MessageType.ERROR,
+                            data='invalid UUID',
+                            request_id=uuid4()
+                        )
                     )
-                )
-    except WebSocketDisconnect as e:
-        logger.debug(f'ws: {e}')
-        await ws_manager.disconnect(user_id)
+        except WebSocketDisconnect as e:
+            app.state.logger.debug(f'ws: {e}')
+            await app.state.ws_manager.disconnect(user_id)
 
+    return app
+
+
+app = create_app()
 
 if __name__ == '__main__':
-    uvicorn.run(app, host='::', port=8000, log_level='debug') # for debugging
+    uvicorn.run(app, host='::', port=8000, log_level='debug')  # for debugging
