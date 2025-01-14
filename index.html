@@ -66,13 +66,13 @@
             }
             #messages {
                 overflow-y: auto;
-                min-width: fit-content;
                 background-color: #D5E1E7;
                 border-radius: 6px;
                 font-weight: bolder;
             }
             #messages div {
                 margin: 10px 10px 10px;
+                min-width: fit-content;
                 padding: 5px;
                 background-color: white;
                 border-radius: 6px;
@@ -122,7 +122,7 @@
                     const messageContainer = document.createElement('div');
                     const message = document.createElement('pre');
 
-                    const scrolledToBottom = Math.abs(messages.scrollHeight - messages.scrollTop - messages.clientHeight) < 1;
+                    const scrolledToBottom = Math.abs(messages.scrollHeight - messages.scrollTop - messages.clientHeight) < 50;
 
                     const content = document.createTextNode(JSON.stringify(JSON.parse(event.data), undefined, 2));
                     message.appendChild(content);
@@ -137,9 +137,9 @@
 
                 ws.onclose = function (e) {
                     // console.log('Socket is closed. Reconnect will be attempted in 1 second.', e.reason);
-                    // setTimeout(function () {
-                    //     connect();
-                    // }, 1000);
+                    setTimeout(function () {
+                        connect();
+                    }, 5000);
                     formButton.textContent = 'Connect';
 
                     formButton.onclick = connect;

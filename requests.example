@@ -1,3 +1,34 @@
+// request
+{
+    "type": "set_id",
+    "data": "1a4012f5-e59b-4cc2-a321-e576b4a2af8e",
+    "requestId": "c25c885f-8742-4d75-95aa-338248c82a60"
+}
+
+// response
+{
+    "type": "success",
+    "data": null,
+    "requestId": "c25c885f-8742-4d75-95aa-338248c82a60"
+}
+
+//notification 1
+{
+    "type": "disconnect",
+    "data": "b4df09ef-2d16-4046-b4db-c14e076356f7",
+    "requestId": "8df02873-90e5-4235-bbf8-14cb709810fb"
+}
+
+//notification 2
+{
+    "type": "connect",
+    "data": "1093ad44-c45d-4e12-96fe-08e1cb188e33",
+    "requestId": "1a3ecb9e-8264-41a1-8ea0-e70637545907"
+}
+
+///////////////
+
+// request
 {
     "type": "set_user_info",
     "data": {
@@ -7,14 +38,55 @@
     "requestId": "b324e284-b580-4dcf-9940-a66842a42291"
 }
 
+// response
+{
+    "type": "success",
+    "data": {
+        "userId": "1093ad44-c45d-4e12-96fe-08e1cb188e33"
+    },
+    "requestId": "b324e284-b580-4dcf-9940-a66842a42291"
+}
+
+//notification
+{
+    "type": "set_user_info",
+    "data": {
+        "userId": "1a4012f5-e59b-4cc2-a321-e576b4a2af8e",
+        "userName": "Alex",
+        "picture": "test",
+        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+        "isReady": false
+    },
+    "requestId": "ef27fd78-002b-43d0-a0c9-984f2fce9a14"
+}
+
+///////////////
+
+//request
 {
     "type": "get_user_info",
+    "data": "85ed8240-79fa-4e26-9ab0-3a609e71964f",
+    "requestId": "db390b5f-3d04-479d-ab2f-466a867cf591"
+}
+
+//response
+{
+    "type": "success",
     "data": {
-        "userId": "85ed8240-79fa-4e26-9ab0-3a609e71964f"
+        "userId": "1093ad44-c45d-4e12-96fe-08e1cb188e33",
+        "userName": "Alex",
+        "picture": "test",
+        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+        "isReady": false
     },
     "requestId": "db390b5f-3d04-479d-ab2f-466a867cf591"
 }
 
+//no notification
+
+///////////////
+
+//request
 {
     "type": "set_group_info",
     "data": {
@@ -24,32 +96,406 @@
     "requestId": "a4bc72ce-c01c-4501-85df-453dc9e375a1"
 }
 
+//response
+{
+    "type": "success",
+    "data": null,
+    "requestId": "a4bc72ce-c01c-4501-85df-453dc9e375a1"
+}
+
+//notification
+{
+    "type": "set_group_info",
+    "data": {
+        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+        "groupName": "testgroup",
+        "groupMembers": [
+            "1a4012f5-e59b-4cc2-a321-e576b4a2af8e",
+            "98f99d9e-b7ec-4702-8fd9-f414c4c9d1cd"
+        ],
+        "isReady": false
+    },
+    "requestId": "c25c885f-8742-4d75-95aa-338248c82a60"
+}
+
+///////////////
+
+//request
 {
     "type": "get_group_info",
+    "data": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+    "requestId": "f82f8661-352a-4d6c-a7a6-8df37d6003b2"
+}
+
+//response
+{
+    "type": "success",
     "data": {
-        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9"
+        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+        "groupName": "testgroup",
+        "groupMembers": [
+            {
+                "userId": "1a4012f5-e59b-4cc2-a321-e576b4a2af8e",
+                "userName": "BestNickname",
+                "picture": null,
+                "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+                "isReady": false
+            },
+            {
+                "userId": "98f99d9e-b7ec-4702-8fd9-f414c4c9d1cd",
+                "userName": "Alex",
+                "picture": "test",
+                "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+                "isReady": false
+            }
+        ],
+        "isReady": false
     },
     "requestId": "f82f8661-352a-4d6c-a7a6-8df37d6003b2"
 }
 
+//no notification
+
+///////////////
+
+//request
 {
     "type": "join_group",
+    "data": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+    "requestId": "50b516cc-ea18-4453-b0a6-7c6f617dd1e5"
+}
+
+//response
+{
+    "type": "success",
     "data": {
-        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9"
+        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+        "groupName": "testgroup",
+        "groupMembers": [
+            {
+                "userId": "1a4012f5-e59b-4cc2-a321-e576b4a2af8e",
+                "userName": "BestNickname",
+                "picture": null,
+                "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+                "isReady": false
+            },
+            {
+                "userId": "98f99d9e-b7ec-4702-8fd9-f414c4c9d1cd",
+                "userName": "Alex",
+                "picture": "test",
+                "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+                "isReady": false
+            }
+        ],
+        "isReady": false
     },
     "requestId": "50b516cc-ea18-4453-b0a6-7c6f617dd1e5"
 }
 
+//notification
+{
+    "type": "join_group",
+    "data": {
+        "userId": "e2b332c4-164d-47f7-8611-4af024d13192",
+        "userName": "Alex",
+        "picture": "test",
+        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+        "isReady": false
+    },
+    "requestId": "874934eb-c78d-4981-80fe-1e822a258114"
+}
+
+///////////////
+
+//request
 {
     "type": "leave_group",
-    "data": {
-        "groupId": "eb8f9991-d198-4b10-9447-6486d0c945a9"
-    },
+    "data": "eb8f9991-d198-4b10-9447-6486d0c945a9",
     "requestId": "28991484-e631-41bf-b853-ae3cb5f47da5"
 }
 
+//response
+{
+    "type": "success",
+    "data": null,
+    "requestId": "28991484-e631-41bf-b853-ae3cb5f47da5"
+}
+
+//notification
+{
+    "type": "leave_group",
+    "data": "eb8f9991-d198-4b10-9447-6486d0c945a9",
+    "requestId": "28991484-e631-41bf-b853-ae3cb5f47da5"
+}
+
+///////////////
+
+//request
+{
+    "type": "leave_group",
+    "data": null,
+    "requestId": "28991484-e631-41bf-b853-ae3cb5f47da5"
+}
+
+//response
+{
+    "type": "success",
+    "data": null,
+    "requestId": "28991484-e631-41bf-b853-ae3cb5f47da5"
+}
+
+//notification
+{
+    "type": "leave_group",
+    "data": "e2b332c4-164d-47f7-8611-4af024d13192",
+    "requestId": "78545cd8-250b-43bd-a179-0a7b649875dd"
+}
+
+///////////////
+
+//request
 {
     "type": "delete_group",
     "data": null,
     "requestId": "23ce5565-719a-417c-8a3e-059c405430e0"
+}
+
+//response
+{
+    "type": "success",
+    "data": null,
+    "requestId": "23ce5565-719a-417c-8a3e-059c405430e0"
+}
+
+//notification
+{
+    "type": "delete_group",
+    "data": null,
+    "requestId": "310d96c1-5d01-4f02-8573-dc860596b6a3"
+}
+
+///////////////
+
+//request
+{
+    "type": "set_teams",
+    "data": [
+        {
+            "teamId": "1",
+            "teamMembers": [
+                "a2fedb51-4664-48f9-bfe0-be6ad48ddee5",
+                "e2b332c4-164d-47f7-8611-4af024d13192"
+            ]
+        },
+        {
+            "teamId": "2",
+            "teamMembers": [
+                "1093ad44-c45d-4e12-96fe-08e1cb188e33",
+                "41870a7e-3adf-4c08-92f8-e5f95a3f8fa7"
+            ]
+        }
+    ],
+    "requestId": "7f9dcbac-fe90-41a7-ab10-d8b7444f5b11"
+}
+
+//response
+{
+    "type": "success",
+    "data": null,
+    "requestId": "7f9dcbac-fe90-41a7-ab10-d8b7444f5b11"
+}
+
+//notification
+{
+    "type": "set_teams",
+    "data": [
+        {
+            "teamId": 1,
+            "teamMembers": [
+                "a2fedb51-4664-48f9-bfe0-be6ad48ddee5",
+                "e2b332c4-164d-47f7-8611-4af024d13192"
+            ]
+        },
+        {
+            "teamId": 2,
+            "teamMembers": [
+                "1093ad44-c45d-4e12-96fe-08e1cb188e33",
+                "41870a7e-3adf-4c08-92f8-e5f95a3f8fa7"
+            ]
+        }
+    ],
+    "requestId": "c8fd9a3c-10b5-4339-b026-5b853be2ed53"
+}
+
+///////////////
+
+//request
+{
+    "type": "get_teams",
+    "data": null,
+    "requestId": "8c75e987-4282-46b4-b8e6-b00bd22c2e44"
+}
+
+//response
+{
+    "type": "success",
+    "data": [
+        {
+            "teamId": 1,
+            "teamMembers": [
+                "a2fedb51-4664-48f9-bfe0-be6ad48ddee5",
+                "e2b332c4-164d-47f7-8611-4af024d13192"
+            ]
+        },
+        {
+            "teamId": 2,
+            "teamMembers": [
+                "1093ad44-c45d-4e12-96fe-08e1cb188e33",
+                "41870a7e-3adf-4c08-92f8-e5f95a3f8fa7"
+            ]
+        }
+    ],
+    "requestId": "8c75e987-4282-46b4-b8e6-b00bd22c2e44"
+}
+
+//no notification
+
+///////////////
+
+//request
+{
+    "type": "set_user_ready",
+    "data": true,
+    "requestId": "c8fd9a3c-10b5-4339-b026-5b853be2ed53"
+}
+
+//response
+{
+    "type": "success",
+    "data": {
+        "userId": "e2b332c4-164d-47f7-8611-4af024d13192",
+        "teamIsReady": false
+    },
+    "requestId": "c8fd9a3c-10b5-4339-b026-5b853be2ed53"
+}
+
+//notification
+{
+    "type": "set_user_ready",
+    "data": {
+        "userId": "e2b332c4-164d-47f7-8611-4af024d13192",
+        "isReady": true,
+        "teamIsReady": false
+    },
+    "requestId": "a1adb497-5828-455e-8d86-49db58827f27"
+}
+
+///////////////
+
+//request
+{
+    "type": "set_group_ready",
+    "data": true,
+    "requestId": "bdf968bd-a2d8-4af0-bad4-62b5d7289535"
+}
+
+//response
+{
+    "type": "success",
+    "data": null,
+    "requestId": "bdf968bd-a2d8-4af0-bad4-62b5d7289535"
+}
+
+//notification
+{
+    "type": "set_group_ready",
+    "data": true,
+    "requestId": "1cc5d10f-f52c-4969-90d4-ee0241b36db6"
+}
+
+///////////////
+
+//request
+{
+    "type": "collecting_stamps_start",
+    "data": null,
+    "requestId": "471f939d-a88c-4918-9df7-38950eb8368f"
+}
+
+//response
+{
+    "type": "success",
+    "data": [
+        {
+            "questionText": "question 1 text",
+            "correctAnswer": "answer 3 text"
+            "wrongAnswers": [
+                "answer 1 text",
+                "answer 2 text"
+            ],
+        },
+        {
+            "questionText": "question 2 text",
+            "correctAnswer": "answer 3 text"
+            "wrongAnswers": [
+                "answer 1 text",
+                "answer 2 text"
+            ],
+        }
+    ],
+    "requestId": "471f939d-a88c-4918-9df7-38950eb8368f"
+}
+
+//notification
+{
+    "type": "collecting_stamps_start",
+    "data": [
+        {
+            "questionText": "question 1 text",
+            "correctAnswer": "answer 3 text"
+            "wrongAnswers": [
+                "answer 1 text",
+                "answer 2 text"
+            ],
+        },
+        {
+            "questionText": "question 2 text",
+            "correctAnswer": "answer 3 text"
+            "wrongAnswers": [
+                "answer 1 text",
+                "answer 2 text"
+            ],
+        }
+    ],
+    "requestId": "302c5029-2ece-40d3-a46e-ced4bed0b8e9"
+}
+
+///////////////
+
+//request
+{
+    "type": "collecting_stamps_progress",
+    "data": {
+        "questionText1": true/false,
+        "questionText2": true/false,
+        "questionText3": true/false,
+    },
+    "requestId": "<UUID>"
+}
+
+//response
+{
+    "type": "success",
+    "data": null,
+    "requestId": "<UUID>"
+}
+
+////////////////////
+
+{
+    "type": "collectingStampsCompleted",
+    "data": null,
+    "requestId": "<UUID>"
+}
+
 }
