@@ -741,7 +741,7 @@ class MessageHandler:
             self.db.add_or_update_user(user=new_user)
 
             self.logger.debug(f'handle_set_user_info: success')
-            if old_user and (group := self.db.get_group(old_user.group_id)):
+            if old_user and old_user.group_id and (group := self.db.get_group(old_user.group_id)):
                 await self.ws_manager.broadcast(
                     group.members - {user_id},
                     Message(
