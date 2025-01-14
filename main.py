@@ -11,6 +11,7 @@ from enum import Enum, StrEnum
 from dataclasses import dataclass, field
 from typing import Dict, Any
 import random
+from ordered_set import OrderedSet
 import json_fix as _  # for json.dumps() to work on custom classes with __json__ method
 import uvicorn  # for debugging
 
@@ -150,7 +151,7 @@ class Group:
     id: UUID
     admin_id: UUID = field(compare=False)
     name: str = field(compare=False)
-    members: set[UUID] = field(compare=False, init=False, default_factory=set)
+    members: set[UUID] = field(compare=False, init=False, default_factory=OrderedSet)
     is_ready: bool = field(init=False, default=False)
 
     def update_from_dict(self, data: dict):
