@@ -1755,6 +1755,10 @@ def create_app():
     async def get():
         return FileResponse('index.html')
 
+    @app.get('/download')
+    async def get():
+        return FileResponse('trainhunt.apk')
+
     @app.websocket('/ws')
     async def websocket_endpoint(ws: WebSocket):
         user_id = await app.state.ws_manager.connect(ws)
